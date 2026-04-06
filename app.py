@@ -357,6 +357,25 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
 
     # --- Evaluation ---
     st.header(f"5. {tr('Đánh giá', 'Evaluation', lang)}")
+    st.markdown(
+        tr(
+            """
+- **Độ chính xác (Accuracy):** tỷ lệ mẫu dự đoán đúng trên toàn bộ dữ liệu test.  
+- **Độ chuẩn xác (Precision - phishing):** trong các mẫu mô hình dự đoán là phishing, có bao nhiêu mẫu thực sự là phishing.  
+- **Độ bao phủ (Recall - phishing):** trong các mẫu phishing thực tế, mô hình phát hiện được bao nhiêu.  
+- **Điểm F1 (F1-score):** trung bình điều hòa giữa precision và recall.  
+- **Ma trận nhầm lẫn (Confusion matrix):** cho biết số lượng dự đoán đúng/sai theo từng lớp `legitimate` và `phishing`.
+""",
+            """
+- **Accuracy:** proportion of correct predictions on the test set.  
+- **Precision (phishing):** among samples predicted as phishing, how many are truly phishing.  
+- **Recall (phishing):** among truly phishing samples, how many are detected.  
+- **F1-score:** harmonic mean of precision and recall.  
+- **Confusion matrix:** counts correct/incorrect predictions for `legitimate` and `phishing`.
+""",
+            lang,
+        )
+    )
     if "model" not in st.session_state:
         st.caption(tr("Hãy huấn luyện mô hình trước.", "Train the model first.", lang))
     else:
@@ -378,6 +397,25 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
 
     # --- Prediction & rule explanation ---
     st.header(f"6. {tr('Dự đoán và giải thích luật', 'Prediction & rule explanation', lang)}")
+    st.markdown(
+        tr(
+            """
+- **Chế độ A (mặc định):** chọn một dòng trong tập test để xem dự đoán và so sánh với nhãn thật.  
+- **Chế độ B:** nhập tay một tập nhỏ đặc trưng quan trọng; các đặc trưng còn lại dùng giá trị mặc định từ train.  
+- **Decision path:** hiển thị các nhánh `feature = bin/category` mà mẫu đi qua trong cây ID3.  
+- **Readable IF-THEN rule:** chuyển đường đi thành luật dễ đọc, ví dụ `IF ... THEN class = phishing/legitimate`.  
+- **Natural-language explanation:** diễn giải ngắn gọn vì sao mẫu được phân loại như vậy.
+""",
+            """
+- **Mode A (default):** select a row from the test set to view prediction and compare with true label.  
+- **Mode B:** manually input a small subset of important features; remaining features use train-time defaults.  
+- **Decision path:** shows branch decisions `feature = bin/category` followed by the sample in the ID3 tree.  
+- **Readable IF-THEN rule:** converts that path into a human-readable rule, e.g., `IF ... THEN class = phishing/legitimate`.  
+- **Natural-language explanation:** short text explaining why the sample received that class.
+""",
+            lang,
+        )
+    )
     if "model" not in st.session_state or "test_df" not in st.session_state:
         st.caption(tr("Huấn luyện mô hình để bật chức năng dự đoán.", "Train the model to enable prediction.", lang))
     else:
