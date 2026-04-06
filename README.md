@@ -19,17 +19,25 @@
 - **Không dùng làm đặc trưng:** `FILENAME` (metadata/định danh file).
 - **Đặc trưng:** các cột còn lại theo danh sách chuẩn PhiUSIIL (URL, URLLength, Domain, …, NoOfExternalRef).
 
-Loader yêu cầu đủ các cột đặc trưng đã nêu trong `src/utils.py` và cột `label`.
+Khi đọc CSV, `validate_schema` yêu cầu đủ **`label`** và **toàn bộ** tên cột trong `FEATURE_COLUMNS` (`src/utils.py`). Cột **`FILENAME`** là tuỳ chọn (nếu có sẽ bị bỏ khi tiền xử lý).
+
+**Nhãn mục tiêu:** chỉ chấp nhận nhị phân **`0`/`1`** (hoặc float tương đương), hoặc chuỗi trong tập token cố định (ví dụ `phishing` / `legitimate`). Giá trị lạ hoặc thiếu sẽ báo lỗi rõ ràng, không gán âm thầm vào lớp `0`.
 
 ## Cột bị loại / thiết kế tiền xử lý
 
 | Thành phần | Xử lý |
 |------------|--------|
 | `FILENAME` | Luôn bỏ (không phải tín hiệu học). |
-| `URL`, `Domain`, `Title` | **Mặc định bỏ** vì độ cardinal cực cao (gần như mỗi dòng một giá trị) → cây ID3 rất lớn, chậm, khó đọc. Có thể bật lại trong UI nếu muốn thử (không khuyến nghị cho demo). |
-| `TLD` | Giữ dạng **hạng mục**: top-N giá trị phổ biến trên **tập train**, còn lại gộp `OTHER`. |
+| `URL`, `Domain`, `Title` | **Luôn bỏ** trong pipeline demo: độ cardinal cực cao; giữ lại sẽ làm cây ID3 phình to, và ép kiểu số sẽ làm sai ngữ nghĩa. |
+| `TLD` (và mọi cột khai báo trong `CATEGORICAL_FEATURES`) | **Hạng mục**: top-N trên **tập train** mỗi cột, còn lại gộp `OTHER`. |
 | Cột số / đếm / tỷ lệ còn lại | **Rời hóa** bằng bin (quantile hoặc uniform), **chỉ fit trên train**. |
-| Giá trị thiếu | Số: median (train); TLD: `__MISSING__` / `OTHER`. |
+| Giá trị thiếu | Số: median (train); hạng mục: `__MISSING__` / `OTHER`. |
+
+## Kiểm thử (tối thiểu)
+
+```bash
+python -m pytest
+```
 
 ## Cài đặt
 
@@ -81,10 +89,10 @@ project_root/
 
 - Tách `label` làm target.
 - Bỏ `FILENAME` khỏi tập đặc trưng.
-- Mặc định bỏ `URL`, `Domain`, `Title` vì cardinality cao.
+- Luôn bỏ `URL`, `Domain`, `Title` (high-cardinality; không hỗ trợ trong demo này).
 - Giữ `TLD` dưới dạng categorical (top-N, còn lại `OTHER`).
 - Cột số được rời hóa bằng bin (`quantile` hoặc `uniform`) và **fit chỉ trên train**, sau đó tái sử dụng cho test/predict.
-- UI hiển thị tóm tắt tiền xử lý gồm: cột bỏ, chiến lược binning, số bins, train-only fitting, trạng thái row limit/sampling.
+- UI hiển thị tóm tắt tiền xử lý gồm: cột bỏ, chiến lược binning, số bins, train-only fitting, trạng thái row limit/sampling. Nếu đổi tham số sau khi train, UI cảnh báo metrics/cây hiện tại là của **lần train trước** cho tới khi train lại.
 
 ## Cách dự đoán hoạt động
 
@@ -97,7 +105,7 @@ project_root/
 
 ## Hạn chế
 
-- ID3 trên dữ liệu lớn và nhiều nhánh (đặc biệt nếu giữ URL/Domain/Title) có thể **rất chậm** — dùng **giới hạn số dòng**, **max depth**, **min samples split** trong UI.
+- ID3 trên dữ liệu lớn vẫn có thể **chậm** — dùng **giới hạn số dòng**, **max depth**, **min samples split** trong UI.
 - Rời hóa bằng bin là xấp xỉ; kết quả phụ thuộc `n_bins` và chiến lược bin.
 - Dự đoán với giá trị hạng mục **chưa thấy** trên nhánh cây: dùng **nhãn đa số** tại nút đó (fallback).
 

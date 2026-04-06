@@ -8,23 +8,33 @@ from typing import BinaryIO
 
 import pandas as pd
 
-from src.utils import DEFAULT_CSV_PATH, FEATURE_COLUMNS, ID_COL_DROP, TARGET_COL
+from src.utils import DEFAULT_CSV_PATH, FEATURE_COLUMNS, TARGET_COL
 
 
-def required_columns() -> list[str]:
-    return [TARGET_COL, ID_COL_DROP, *FEATURE_COLUMNS]
+def schema_required_columns() -> list[str]:
+    """Columns that must exist for load/train: `label` plus every name in `FEATURE_COLUMNS`.
+
+    `FILENAME` and other extra columns are optional and ignored by validation.
+    """
+    return [TARGET_COL, *FEATURE_COLUMNS]
 
 
 def validate_schema(df: pd.DataFrame) -> None:
-    if TARGET_COL not in df.columns:
+    """Require binary target `label` and the full PhiUSIIL feature set from `FEATURE_COLUMNS`.
+
+    Does **not** require `FILENAME`; the preprocessing pipeline drops it when present.
+    """
+    missing = [c for c in schema_required_columns() if c not in df.columns]
+    if not missing:
+        return
+    if TARGET_COL in missing:
         raise ValueError(f"Missing required target column: '{TARGET_COL}'")
     missing_features = [c for c in FEATURE_COLUMNS if c not in df.columns]
-    if missing_features:
-        raise ValueError(
-            "CSV is missing expected feature columns: "
-            + ", ".join(missing_features[:10])
-            + (" ..." if len(missing_features) > 10 else "")
-        )
+    raise ValueError(
+        "CSV is missing expected feature columns: "
+        + ", ".join(missing_features[:10])
+        + (" ..." if len(missing_features) > 10 else "")
+    )
 
 
 def load_csv_from_path(path: str | Path) -> pd.DataFrame:

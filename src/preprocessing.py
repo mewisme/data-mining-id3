@@ -26,7 +26,8 @@ BinStrategy = Literal["quantile", "uniform"]
 @dataclass
 class PreprocessConfig:
     drop_high_card_text: bool = True
-    tld_top_n: int = 50  # keep top N TLDs; rest -> OTHER
+    # Max frequent categories kept per categorical column on train; remainder -> OTHER
+    tld_top_n: int = 50
     n_bins: int = 5
     bin_strategy: BinStrategy = "quantile"
 
@@ -41,7 +42,7 @@ class PreprocessingPipeline:
     categorical_columns: list[str] = field(default_factory=list)
     imputers: dict[str, SimpleImputer] = field(default_factory=dict)
     discretizers: dict[str, KBinsDiscretizer] = field(default_factory=dict)
-    tld_top_categories: list[str] | None = None
+    categorical_top_values: dict[str, list[str]] = field(default_factory=dict)
     # One raw-feature row (median/mode) for filling manual prediction gaps
     default_raw_row: pd.Series | None = None
 
@@ -71,6 +72,9 @@ class PreprocessingPipeline:
     def fit(self, df: pd.DataFrame) -> "PreprocessingPipeline":
         X, _ = self._select_features(df)
         self._infer_numeric_categorical(X)
+        self.imputers = {}
+        self.discretizers = {}
+        self.categorical_top_values = {}
 
         X_work = X.copy()
         default_vals: dict[str, Any] = {}
@@ -140,7 +144,7 @@ class PreprocessingPipeline:
                 .value_counts()
             )
             top = vc.head(self.config.tld_top_n).index.astype(str).tolist()
-            self.tld_top_categories = top
+            self.categorical_top_values[c] = top
             default_vals[c] = top[0] if top else "__MISSING__"
 
         self.default_raw_row = pd.Series(default_vals)
@@ -172,7 +176,7 @@ class PreprocessingPipeline:
 
         for c in self.categorical_columns:
             raw = X[c].astype(str).replace({"nan": np.nan}).fillna("__MISSING__")
-            top = set(self.tld_top_categories or [])
+            top = set(self.categorical_top_values.get(c, []))
             out[c] = raw.where(raw.isin(top), other="OTHER")
 
         return pd.DataFrame(out, index=X.index)
@@ -213,24 +217,62 @@ class PreprocessingPipeline:
         return out
 
 
+# Canonical string tokens -> 0 (legitimate) / 1 (phishing). Unknown tokens are errors, never defaulted.
+_TARGET_STR_TO_BIN: dict[str, int] = {
+    "0": 0,
+    "legitimate": 0,
+    "benign": 0,
+    "safe": 0,
+    "no": 0,
+    "1": 1,
+    "phishing": 1,
+    "malicious": 1,
+    "yes": 1,
+}
+
+
 def normalize_target(y: pd.Series) -> tuple[pd.Series, dict[Any, int]]:
-    """Map label column to int 0/1 (legitimate/phishing). Dataset is usually already 0/1."""
-    uniq = sorted(pd.unique(y.dropna()))
-    mapping: dict[Any, int] = {}
-    if set(uniq) <= {0, 1}:
-        y_out = y.astype(int)
+    """Map label column to int 0 (legitimate) / 1 (phishing).
+
+    - Rejects NaN in the target.
+    - Accepts numeric labels only if every value is exactly 0 or 1 (including 0.0 / 1.0).
+    - Accepts a fixed set of string tokens (case-insensitive); any other string raises ValueError.
+    """
+    if y.isna().any():
+        n_na = int(y.isna().sum())
+        raise ValueError(f"Target column contains {n_na} missing value(s); drop or impute them before training.")
+
+    num = pd.to_numeric(y, errors="coerce")
+    if num.notna().all():
+        bad = num[(num != 0) & (num != 1)]
+        if len(bad) > 0:
+            samp = sorted(pd.unique(bad))[:10]
+            raise ValueError(
+                "Target must be binary 0/1 (or equivalent floats). "
+                f"Found non-binary numeric value(s), e.g.: {samp}"
+            )
+        y_out = num.astype(int)
         return y_out, {0: 0, 1: 1}
-    # heuristic string labels
+
     lower = y.astype(str).str.lower().str.strip()
-    for u in pd.unique(lower.dropna()):
-        if u in ("0", "legitimate", "benign", "safe", "no"):
-            mapping[u] = 0
-        elif u in ("1", "phishing", "malicious", "yes"):
-            mapping[u] = 1
-    if len(mapping) >= 2:
-        y_out = lower.map(lambda v: mapping.get(v, 0))
-        return y_out.astype(int), mapping
-    raise ValueError(f"Cannot normalize target; unique values: {uniq[:20]}")
+    unknown: list[str] = []
+    out_vals: list[int] = []
+    mapping_raw: dict[str, int] = {}
+    for token in pd.unique(lower):
+        if token not in _TARGET_STR_TO_BIN:
+            unknown.append(token)
+        else:
+            mapping_raw[token] = _TARGET_STR_TO_BIN[token]
+    if unknown:
+        show = unknown[:15]
+        raise ValueError(
+            "Unsupported target label value(s): "
+            f"{show!r}. "
+            "Use 0/1 or one of: "
+            + ", ".join(sorted(_TARGET_STR_TO_BIN))
+        )
+    y_out = lower.map(mapping_raw)
+    return y_out.astype(int), dict(mapping_raw)
 
 
 def preprocessing_summary(config: PreprocessConfig, feature_columns: list[str]) -> dict[str, Any]:

@@ -62,6 +62,56 @@ def _format_path_rule(path: list[tuple[str, object, str]], lang: str) -> tuple[s
     return rule, natural
 
 
+def _training_config_snapshot(
+    *,
+    n_bins: int,
+    bin_strategy: str,
+    categorical_top_n: int,
+    test_size: float,
+    max_depth: int,
+    min_samples_split: int,
+    row_limit: int,
+    data_row_count: int,
+    data_columns_fingerprint: tuple[str, ...],
+) -> dict[str, object]:
+    """Hashable training UI + data fingerprint so we can detect stale metrics."""
+    return {
+        "n_bins": int(n_bins),
+        "bin_strategy": str(bin_strategy),
+        "categorical_top_n": int(categorical_top_n),
+        "test_size": float(test_size),
+        "max_depth": int(max_depth),
+        "min_samples_split": int(min_samples_split),
+        "row_limit": int(row_limit),
+        "data_row_count": int(data_row_count),
+        "data_columns_fingerprint": data_columns_fingerprint,
+    }
+
+
+def _current_training_config_from_ui(
+    df: pd.DataFrame,
+    *,
+    n_bins: int,
+    bin_strategy: str,
+    categorical_top_n: int,
+    test_size: float,
+    max_depth: int,
+    min_samples_split: int,
+    row_limit: int,
+) -> dict[str, object]:
+    return _training_config_snapshot(
+        n_bins=n_bins,
+        bin_strategy=bin_strategy,
+        categorical_top_n=categorical_top_n,
+        test_size=test_size,
+        max_depth=max_depth,
+        min_samples_split=min_samples_split,
+        row_limit=row_limit,
+        data_row_count=len(df),
+        data_columns_fingerprint=tuple(sorted(df.columns.astype(str))),
+    )
+
+
 def _safe_bin_ranges(pipe_obj: object) -> dict[str, list[str]]:
     """Get bin ranges from new or old PreprocessingPipeline objects."""
     # New versions
@@ -230,22 +280,25 @@ def main() -> None:
 
     # --- Preprocessing controls ---
     st.header(f"3. {L(lang, 'Preprocessing', 'Tiền xử lý')}")
-    drop_high = st.checkbox(
+    st.info(
         L(
             lang,
-            "Drop high-cardinality text: `URL`, `Domain`, `Title` (recommended)",
-            "Bỏ text **high-cardinality**: `URL`, `Domain`, `Title` (khuyến nghị)",
-        ),
-        value=True,
-        help=L(
-            lang,
-            "Raw `URL`/`Domain`/`Title` are almost unique per row — the ID3 tree explodes. `TLD` stays categorical with top-N + `OTHER`.",
-            "`URL`/`Domain`/`Title` gần như khác nhau mỗi dòng — cây ID3 rất lớn. Giữ `TLD` dạng categorical, **top-N** + `OTHER`.",
-        ),
+            "Columns `URL`, `Domain`, and `Title` are **always dropped**: they are almost unique per row, so keeping them would make the custom ID3 tree huge, and numeric coercion would silently ruin those fields. Categorical columns (e.g. `TLD`) use **top-N** on the train split with `OTHER` for rare/unseen values.",
+            "Các cột `URL`, `Domain`, `Title` **luôn bị bỏ**: gần như khác nhau mỗi dòng nên giữ lại sẽ làm cây ID3 phình to; ép kiểu số cũng làm hỏng ngữ nghĩa. Cột phân loại (vd. `TLD`) dùng **top-N** trên tập train và `OTHER` cho giá trị hiếm/chưa gặp.",
+        )
     )
     n_bins = st.slider(L(lang, "Number of bins (numeric discretization)", "Số **bins** (rời rạc hóa số)"), 3, 15, 5)
     bin_strategy = st.selectbox(L(lang, "Bin strategy", "Chiến lược **bin**"), ["quantile", "uniform"], index=0)
-    tld_top_n = st.slider(L(lang, "TLD: top-N frequent categories (else OTHER)", "TLD: giữ **top-N** (còn lại **OTHER**)"), 10, 200, 50)
+    tld_top_n = st.slider(
+        L(
+            lang,
+            "Top-N frequent categories per categorical column (else OTHER)",
+            "**Top-N** hạng mục thường gặp / mỗi cột phân loại (còn lại **OTHER**)",
+        ),
+        10,
+        200,
+        50,
+    )
     if bin_strategy == "quantile":
         st.caption(
             L(
@@ -263,11 +316,18 @@ def main() -> None:
             )
         )
 
+    st.caption(
+        L(
+            lang,
+            "Sliders above are **for the next training run** only. Metrics and the tree reflect the **last** Train click unless you retrain.",
+            "Thanh trượt phía trên chỉ áp dụng cho **lần Train tiếp theo**. Metrics và cây phản ánh **lần Train gần nhất** nếu bạn chưa huấn luyện lại.",
+        )
+    )
     st.markdown(
         f"- **Dropped identifier:** `{ID_COL_DROP}`\n"
-        f"- **Target:** `{TARGET_COL}` (`0` = legitimate, `1` = phishing)\n"
-        f"- **Dropped high-cardinality text (default):** `URL`, `Domain`, `Title`\n"
-        f"- **Kept categorical:** `TLD` (top-{tld_top_n} + `OTHER`)\n"
+        f"- **Target:** `{TARGET_COL}` (`0` = legitimate, `1` = phishing; unsupported or missing labels error out)\n"
+        f"- **Always dropped (high-cardinality text):** `URL`, `Domain`, `Title`\n"
+        f"- **Categorical columns:** top-{tld_top_n} per column on **train** + `OTHER`\n"
         f"- **Numeric discretization:** `{bin_strategy}`, bins=`{n_bins}`, fit on **train** only, applied to **test** / predict"
     )
 
@@ -287,6 +347,20 @@ def main() -> None:
             L(lang, "Row limit (`0` = all rows)", "Giới hạn dòng (`0` = full data)"), min_value=0, max_value=500_000, value=8000, step=500
         )
 
+    training_drift = False
+    if "model" in st.session_state and "training_config" in st.session_state:
+        current_cfg = _current_training_config_from_ui(
+            df,
+            n_bins=n_bins,
+            bin_strategy=bin_strategy,
+            categorical_top_n=tld_top_n,
+            test_size=test_size,
+            max_depth=int(max_depth),
+            min_samples_split=int(min_samples_split),
+            row_limit=int(row_limit),
+        )
+        training_drift = current_cfg != st.session_state["training_config"]
+
     train_btn = st.button(L(lang, "Train ID3", "Huấn luyện **ID3**"), type="primary")
 
     if train_btn:
@@ -294,7 +368,7 @@ def main() -> None:
         try:
             y_norm, _ = normalize_target(work[TARGET_COL])
             work[TARGET_COL] = y_norm
-        except Exception as e:
+        except ValueError as e:
             st.error(L(lang, f"Target normalization failed: {e}", f"Lỗi chuẩn hóa `label`: {e}"))
             st.stop()
 
@@ -319,7 +393,7 @@ def main() -> None:
             train_df, test_df = train_test_split(work, test_size=test_size, random_state=42)
 
         cfg = PreprocessConfig(
-            drop_high_card_text=drop_high,
+            drop_high_card_text=True,
             n_bins=n_bins,
             bin_strategy=bin_strategy,  # type: ignore[arg-type]
             tld_top_n=tld_top_n,
@@ -348,6 +422,16 @@ def main() -> None:
             "rows_original": int(len(df)),
             "binning_fit_train_only": True,
         }
+        st.session_state["training_config"] = _current_training_config_from_ui(
+            df,
+            n_bins=n_bins,
+            bin_strategy=bin_strategy,
+            categorical_top_n=tld_top_n,
+            test_size=test_size,
+            max_depth=int(max_depth),
+            min_samples_split=int(min_samples_split),
+            row_limit=int(row_limit),
+        )
         st.success(L(lang, "Training finished.", "Huấn luyện xong."))
 
     st.subheader(L(lang, "Preprocessing summary (last train)", "Tóm tắt preprocessing (train gần nhất)"))
@@ -358,7 +442,7 @@ def main() -> None:
         st.markdown(
             f"- **Dropped identifier:** `{info['dropped_identifier']}`\n"
             f"- **Target:** `{info['target']}`\n"
-            f"- **Dropped high-cardinality text (if enabled):** "
+            f"- **Dropped high-cardinality text (always for this demo):** "
             + (", ".join(f"`{c}`" for c in info["dropped_high_card_text_default"]) or L(lang, "—", "—"))
             + "\n"
             f"- **Kept categorical:** "
@@ -394,6 +478,14 @@ def main() -> None:
 
     # --- Evaluation ---
     st.header(f"5. {L(lang, 'Evaluation', 'Đánh giá')}")
+    if training_drift:
+        st.warning(
+            L(
+                lang,
+                "Training settings or the loaded dataset changed since the last Train. **Metrics below still reflect the last trained model** — click **Train ID3** to refresh them.",
+                "Tham số hoặc bộ dữ liệu đã đổi so với lần Train trước. **Metrics bên dưới vẫn là của mô hình train gần nhất** — hãy bấm **Huấn luyện ID3** để cập nhật.",
+            )
+        )
     if lang == "Tiếng Việt":
         st.markdown(
             """
@@ -439,6 +531,14 @@ def main() -> None:
 
     # --- Prediction & rule explanation ---
     st.header(f"6. {L(lang, 'Prediction & rule explanation', 'Dự đoán & giải thích luật')}")
+    if training_drift and "model" in st.session_state:
+        st.warning(
+            L(
+                lang,
+                "Predictions and rules below use the **last trained** tree/preprocessor, not the current sliders until you retrain.",
+                "Dự đoán và luật phía dưới dùng cây/preprocessor **đã train trước đó**, chưa theo thanh trượt hiện tại cho đến khi train lại.",
+            )
+        )
     if lang == "Tiếng Việt":
         st.markdown(
             """
@@ -515,7 +615,15 @@ def main() -> None:
             updates: dict = {}
             cols = st.columns(2)
             manual_fields = [f for f in MANUAL_PREDICTION_FEATURES if f in pipe.feature_columns]
-            assert pipe.default_raw_row is not None
+            if pipe.default_raw_row is None:
+                st.error(
+                    L(
+                        lang,
+                        "Preprocessor has no train defaults; train the model again.",
+                        "Thiếu giá trị mặc định từ train; hãy huấn luyện lại mô hình.",
+                    )
+                )
+                st.stop()
             for i, fname in enumerate(manual_fields):
                 with cols[i % 2]:
                     if fname == "TLD":
