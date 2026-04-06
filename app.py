@@ -25,13 +25,20 @@ from src.utils import FEATURE_COLUMNS, ID_COL_DROP, MANUAL_PREDICTION_FEATURES, 
 
 
 def tr(vi: str, en: str, lang: str) -> str:
-    """Simple bilingual helper; VI keeps original English in parentheses."""
+    """Vietnamese prose in `vi`; English in `en`. Technical terms often stay English inside `vi`."""
     if lang == "Tiếng Việt":
-        return f"{vi} ({en})"
+        if vi.strip() == en.strip():
+            return en
+        return vi
     return en
 
 
-def _format_path_rule(path: list[tuple[str, object, str]]) -> tuple[str, str]:
+def L(lang: str, en: str, vi: str) -> str:
+    """Readable alias: English first in signature."""
+    return tr(vi, en, lang)
+
+
+def _format_path_rule(path: list[tuple[str, object, str]], lang: str) -> tuple[str, str]:
     conditions: list[str] = []
     predicted_class = "unknown"
     for feat, val, _ in path:
@@ -41,14 +48,17 @@ def _format_path_rule(path: list[tuple[str, object, str]]) -> tuple[str, str]:
             conditions.append(f"{feat} = {val}")
     if conditions:
         rule = "IF " + " AND ".join(conditions) + f" THEN class = {predicted_class}"
-        natural = (
-            "This sample followed the branch where "
-            + ", ".join(conditions)
-            + f", so the model classified it as {predicted_class}."
-        )
+        cond_txt = ", ".join(conditions)
+        if lang == "Tiếng Việt":
+            natural = f"Mẫu đi qua các nhánh {cond_txt}, nên mô hình gán nhãn **{predicted_class}**."
+        else:
+            natural = f"This sample followed the branch where {cond_txt}, so the model classified it as **{predicted_class}**."
     else:
         rule = f"THEN class = {predicted_class}"
-        natural = f"The tree reached a direct leaf, so the model classified it as {predicted_class}."
+        if lang == "Tiếng Việt":
+            natural = f"Cây kết thúc ngay tại lá (leaf), mô hình gán nhãn **{predicted_class}**."
+        else:
+            natural = f"The tree reached a direct leaf, so the model classified it as **{predicted_class}**."
     return rule, natural
 
 
@@ -97,26 +107,26 @@ def _load_dataframe(uploaded) -> tuple[pd.DataFrame | None, str]:
 
 
 def _dataset_overview(df: pd.DataFrame, lang: str) -> None:
-    st.header(f"2. {tr('Tổng quan dữ liệu', 'Dataset Overview', lang)}")
+    st.header(f"2. {L(lang, 'Dataset Overview', 'Tổng quan dữ liệu')}")
     n = len(df)
-    st.metric(tr("Tổng số dòng", "Total rows", lang), f"{n:,}")
-    st.metric(tr("Tổng số cột", "Total columns", lang), len(df.columns))
+    st.metric("Total rows", f"{n:,}")
+    st.metric("Total columns", len(df.columns))
     feat_count = len([c for c in FEATURE_COLUMNS if c in df.columns])
-    st.metric(tr("Số cột đặc trưng theo schema", "Schema feature columns present", lang), feat_count)
+    st.metric("Schema features (present)", feat_count)
     if TARGET_COL in df.columns:
-        st.write(f"**{tr('Phân bố biến mục tiêu', 'Target distribution', lang)} (`label`)**")
+        st.write("**Target distribution** (`label`)")
         vc = df[TARGET_COL].value_counts().sort_index()
         st.bar_chart(vc)
         st.write(vc.to_dict())
-    st.write(f"**{tr('Xem trước dữ liệu', 'Preview', lang)}**")
+    st.write("**Preview**")
     st.dataframe(df.head(15), width="stretch")
-    st.write(f"**{tr('Giá trị thiếu (các cột nhiều nhất)', 'Missing values (top columns)', lang)}**")
+    st.write("**Missing values** (top columns)")
     miss = df.isna().sum().sort_values(ascending=False)
     st.dataframe(miss[miss > 0].head(25), width="stretch")
-    st.write(f"**{tr('Kiểu dữ liệu cột', 'Column dtypes', lang)}**")
+    st.write("**Column dtypes**")
     st.dataframe(df.dtypes.astype(str).to_frame("dtype"), width="stretch")
     dtype_summary = df.dtypes.astype(str).value_counts().rename_axis("dtype").reset_index(name="count")
-    st.write(f"**{tr('Tóm tắt kiểu đặc trưng', 'Feature type summary', lang)}**")
+    st.write("**Feature type summary**")
     st.dataframe(dtype_summary, width="stretch")
 
 
@@ -125,46 +135,65 @@ def main() -> None:
     with st.sidebar:
         lang = st.selectbox("Language / Ngôn ngữ", ["English", "Tiếng Việt"], index=0)
 
-    st.title(tr("Phân loại URL phishing bằng ID3 (PhiUSIIL)", "Phishing URL classification with ID3 (PhiUSIIL)", lang))
-    st.header(f"1. {tr('Giới thiệu', 'Introduction', lang)}")
-    st.markdown(
-        f"""
-**{tr('Dự án', 'Project', lang)}:** {tr('Phân loại nhị phân URL / đặc trưng trang web thành', 'Binary classification of URLs / page features into', lang)} **phishing** {tr('và', 'vs', lang)} **legitimate**
-using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
-({tr('entropy', 'entropy', lang)}, {tr('information gain', 'information gain', lang)}, {tr('tách đệ quy', 'recursive splits', lang)} — {tr('không dùng cây', 'not using', lang)} `sklearn`).
-
-**{tr('URL phishing', 'Phishing URLs', lang)}** {tr('giả mạo website tin cậy để đánh cắp thông tin; phân loại tự động từ tín hiệu URL/trang hỗ trợ phòng thủ.', 'mimic trusted sites to steal credentials; automated classification from URL and page signals supports defensive tooling.', lang)}
-
-**ID3** {tr('xây cây bằng cách chọn phép tách tối đa', 'builds a tree by choosing splits that maximize', lang)} **{tr('lợi ích thông tin (information gain)', 'information gain', lang)}** {tr('từ', 'from', lang)} **{tr('độ hỗn loạn (entropy)', 'entropy', lang)}**;
-{tr('ID3 cần thuộc tính rời rạc (discrete), nên cột số được rời rạc hóa (binning) chỉ trên tập train.', 'it expects discrete attributes, so numeric fields are binned on the training set only.', lang)}
-        """  # noqa: E501
-    )
-    st.info(
-        tr(
-            "Mô hình: cây quyết định ID3 tự cài đặt. Tiêu chí tách: entropy và information gain. Không dùng sklearn DecisionTreeClassifier.",
-            "Model: Custom ID3 decision tree. Splitting criterion: entropy and information gain. This is not sklearn DecisionTreeClassifier.",
+    st.title(
+        L(
             lang,
+            "Phishing URL classification with ID3 (PhiUSIIL)",
+            "Phân loại URL phishing bằng ID3 (PhiUSIIL)",
         )
     )
+    st.header(f"1. {L(lang, 'Introduction', 'Giới thiệu')}")
+    if lang == "Tiếng Việt":
+        st.markdown(
+            """
+**Project:** phân loại nhị phân **phishing** và **legitimate** từ đặc trưng URL / trang web, trên **PhiUSIIL Phishing URL Dataset**, bằng **custom ID3 decision tree**
+(**entropy**, **information gain**, **recursive splits** — không dùng `sklearn` **DecisionTreeClassifier**).
+
+**Phishing URLs** giả mạo site tin cậy để lừa lấy thông tin; phân loại tự động hỗ trợ phòng thủ dựa trên tín hiệu URL / trang.
+
+**ID3** chọn thuộc tính tách sao cho **information gain** (từ **entropy**) lớn nhất. Thuật toán cần đầu vào **discrete**, nên cột số được **binning** (rời rạc hóa) và **chỉ fit trên tập train**.
+"""
+        )
+    else:
+        st.markdown(
+            """
+**Project:** binary classification into **phishing** vs **legitimate** from URL / page features, using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3 decision tree**
+(**entropy**, **information gain**, **recursive splits** — not `sklearn` **DecisionTreeClassifier**).
+
+**Phishing URLs** mimic trusted sites to steal credentials; automated classification from URL/page signals supports defensive tooling.
+
+**ID3** picks splits that maximize **information gain** from **entropy**. It expects **discrete** inputs, so numeric columns are **binned** and **fit on the train split only**.
+"""
+        )
+    if lang == "Tiếng Việt":
+        st.info(
+            "**Model:** **custom ID3 decision tree**. **Splitting criterion:** **entropy** và **information gain**. "
+            "Không dùng `sklearn.tree.DecisionTreeClassifier`."
+        )
+    else:
+        st.info(
+            "**Model:** **custom ID3 decision tree**. **Splitting criterion:** **entropy** and **information gain**. "
+            "Not `sklearn.tree.DecisionTreeClassifier`."
+        )
 
     with st.sidebar:
-        st.header(tr("Nguồn dữ liệu", "Data source", lang))
-        uploaded = st.file_uploader("PhiUSIIL CSV", type=["csv"])
+        st.header(L(lang, "Data source", "Nguồn dữ liệu"))
+        uploaded = st.file_uploader(L(lang, "PhiUSIIL CSV upload", "Tải lên CSV PhiUSIIL"), type=["csv"])
         default_path = resolve_default_path()
         if default_path.is_file():
             st.caption(
-                tr(
-                    f"Đã phát hiện file mặc định: {default_path}. Ứng dụng sẽ ưu tiên dùng file này.",
-                    f"Detected default dataset: {default_path}. The app will use it by default.",
+                L(
                     lang,
+                    f"Default dataset found: `{default_path}`. Loaded automatically if you do not upload a file.",
+                    f"Đã có file mặc định `{default_path}` — ưu tiên dùng nếu bạn không upload file khác.",
                 )
             )
         else:
             st.caption(
-                tr(
-                    "Không tìm thấy file mặc định. Vui lòng tải lên CSV để sử dụng.",
-                    "Default dataset not found. Please upload a CSV to run.",
+                L(
                     lang,
+                    "No default CSV in `data/`. Upload a PhiUSIIL CSV to continue.",
+                    "Không thấy CSV mặc định trong `data/`. Hãy upload file PhiUSIIL.",
                 )
             )
 
@@ -172,23 +201,23 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
 
     if df is None:
         st.info(
-            tr(
-                "Vui lòng tải lên file CSV PhiUSIIL trong sidebar để bắt đầu.",
-                "Please upload a PhiUSIIL CSV in the sidebar to start.",
+            L(
                 lang,
+                "Upload a PhiUSIIL CSV in the sidebar, or place the file at `data/PhiUSIIL_Phishing_URL_Dataset.csv`.",
+                "Hãy upload CSV PhiUSIIL ở sidebar, hoặc đặt file tại `data/PhiUSIIL_Phishing_URL_Dataset.csv`.",
             )
         )
         st.stop()
     if source == "default":
         st.success(
-            tr(
-                f"Đang dùng dữ liệu mặc định từ: {resolve_default_path()}",
-                f"Using default dataset from: {resolve_default_path()}",
+            L(
                 lang,
+                f"Using default dataset: `{resolve_default_path()}`",
+                f"Đang dùng dữ liệu mặc định: `{resolve_default_path()}`",
             )
         )
     elif source == "upload":
-        st.success(tr("Đang dùng dữ liệu từ file upload.", "Using dataset from uploaded file.", lang))
+        st.success(L(lang, "Using uploaded CSV.", "Đang dùng file CSV đã upload."))
 
     try:
         validate_schema(df)
@@ -200,57 +229,65 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
     _dataset_overview(df, lang)
 
     # --- Preprocessing controls ---
-    st.header(f"3. {tr('Tiền xử lý', 'Preprocessing', lang)}")
+    st.header(f"3. {L(lang, 'Preprocessing', 'Tiền xử lý')}")
     drop_high = st.checkbox(
-        tr("Loại cột text có cardinality cao", "Drop high-cardinality text", lang) + ": `URL`, `Domain`, `Title` (" + tr("khuyến nghị", "recommended", lang) + ")",
-        value=True,
-        help=tr(
-            "Các cột text thô gần như duy nhất mỗi dòng; ID3 sẽ rất lớn và chậm. TLD được giữ với gom nhóm top-N.",
-            "Raw text fields have near-unique values; ID3 becomes huge and slow. TLD is kept with top-N bucketing.",
+        L(
             lang,
+            "Drop high-cardinality text: `URL`, `Domain`, `Title` (recommended)",
+            "Bỏ text **high-cardinality**: `URL`, `Domain`, `Title` (khuyến nghị)",
+        ),
+        value=True,
+        help=L(
+            lang,
+            "Raw `URL`/`Domain`/`Title` are almost unique per row — the ID3 tree explodes. `TLD` stays categorical with top-N + `OTHER`.",
+            "`URL`/`Domain`/`Title` gần như khác nhau mỗi dòng — cây ID3 rất lớn. Giữ `TLD` dạng categorical, **top-N** + `OTHER`.",
         ),
     )
-    n_bins = st.slider(tr("Số lượng bins (rời rạc hóa số)", "Number of bins (numeric discretization)", lang), 3, 15, 5)
-    bin_strategy = st.selectbox(tr("Chiến lược chia bins", "Bin strategy", lang), ["quantile", "uniform"], index=0)
-    tld_top_n = st.slider(tr("TLD: giữ top-N (còn lại → OTHER)", "TLD: keep top-N categories (rest → OTHER)", lang), 10, 200, 50)
+    n_bins = st.slider(L(lang, "Number of bins (numeric discretization)", "Số **bins** (rời rạc hóa số)"), 3, 15, 5)
+    bin_strategy = st.selectbox(L(lang, "Bin strategy", "Chiến lược **bin**"), ["quantile", "uniform"], index=0)
+    tld_top_n = st.slider(L(lang, "TLD: top-N frequent categories (else OTHER)", "TLD: giữ **top-N** (còn lại **OTHER**)"), 10, 200, 50)
     if bin_strategy == "quantile":
         st.caption(
-            tr(
-                "Bạn chọn quantile: mỗi bin sẽ có số lượng mẫu gần tương đương nhau (không nhất thiết cùng độ rộng giá trị).",
-                "Selected strategy = quantile: each bin contains a similar number of samples (value ranges may have different widths).",
+            L(
                 lang,
+                "**quantile:** bins contain similar sample counts; bin width on the value axis can differ.",
+                "**quantile:** các bin chứa khoảng cùng số mẫu; độ rộng trên trục giá trị có thể khác nhau.",
             )
         )
     else:
         st.caption(
-            tr(
-                "Bạn chọn uniform: các bin có cùng độ rộng khoảng giá trị (số lượng mẫu trong mỗi bin có thể rất khác nhau).",
-                "Selected strategy = uniform: bins have equal value-range width (sample counts per bin may vary a lot).",
+            L(
                 lang,
+                "**uniform:** bins have equal value-range width; sample counts per bin may differ a lot.",
+                "**uniform:** các bin có cùng độ rộng khoảng giá trị; số mẫu mỗi bin có thể rất khác.",
             )
         )
 
     st.markdown(
-        f"- **{tr('Cột định danh bị loại', 'Dropped identifier', lang)}:** `{ID_COL_DROP}`\n"
-        f"- **{tr('Biến mục tiêu', 'Target', lang)}:** `{TARGET_COL}` (0 = legitimate, 1 = phishing)\n"
-        f"- **{tr('Cột text cardinality cao bị loại mặc định', 'Dropped high-cardinality text columns (default)', lang)}:** `URL`, `Domain`, `Title`\n"
-        f"- **{tr('Cột hạng mục giữ lại', 'Kept categorical column', lang)}:** `TLD` (top-{tld_top_n} + OTHER)\n"
-        f"- **{tr('Rời rạc hóa số', 'Numeric discretization', lang)}:** {bin_strategy}, bins={n_bins}, {tr('fit trên train và tái sử dụng cho test/predict', 'fit on train and reused for test/predict', lang)}"
+        f"- **Dropped identifier:** `{ID_COL_DROP}`\n"
+        f"- **Target:** `{TARGET_COL}` (`0` = legitimate, `1` = phishing)\n"
+        f"- **Dropped high-cardinality text (default):** `URL`, `Domain`, `Title`\n"
+        f"- **Kept categorical:** `TLD` (top-{tld_top_n} + `OTHER`)\n"
+        f"- **Numeric discretization:** `{bin_strategy}`, bins=`{n_bins}`, fit on **train** only, applied to **test** / predict"
     )
 
     # --- Training ---
-    st.header(f"4. {tr('Huấn luyện mô hình', 'Model training', lang)}")
+    st.header(f"4. {L(lang, 'Model training', 'Huấn luyện mô hình')}")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        test_size = st.slider(tr("Tỉ lệ tập kiểm tra", "Test size", lang), 0.1, 0.4, 0.2, 0.05)
+        test_size = st.slider(L(lang, "Test split ratio", "Tỉ lệ **test split**"), 0.1, 0.4, 0.2, 0.05)
     with col2:
-        max_depth = st.number_input(tr("Độ sâu tối đa", "Max depth", lang), min_value=1, max_value=50, value=12)
+        max_depth = st.number_input(L(lang, "Max tree depth", "Độ sâu tối đa (**max depth**)"), min_value=1, max_value=50, value=12)
     with col3:
-        min_samples_split = st.number_input(tr("Số mẫu tối thiểu để tách", "Min samples split", lang), min_value=2, max_value=5000, value=100)
+        min_samples_split = st.number_input(
+            L(lang, "Min samples to split", "Ngưỡng **min samples split**"), min_value=2, max_value=5000, value=100
+        )
     with col4:
-        row_limit = st.number_input(tr("Giới hạn số dòng (0 = toàn bộ)", "Row limit (0 = all rows)", lang), min_value=0, max_value=500_000, value=8000, step=500)
+        row_limit = st.number_input(
+            L(lang, "Row limit (`0` = all rows)", "Giới hạn dòng (`0` = full data)"), min_value=0, max_value=500_000, value=8000, step=500
+        )
 
-    train_btn = st.button(tr("Huấn luyện mô hình ID3", "Train ID3 model", lang), type="primary")
+    train_btn = st.button(L(lang, "Train ID3", "Huấn luyện **ID3**"), type="primary")
 
     if train_btn:
         work = df.copy()
@@ -258,16 +295,16 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
             y_norm, _ = normalize_target(work[TARGET_COL])
             work[TARGET_COL] = y_norm
         except Exception as e:
-            st.error(f"Target normalization failed: {e}")
+            st.error(L(lang, f"Target normalization failed: {e}", f"Lỗi chuẩn hóa `label`: {e}"))
             st.stop()
 
         if row_limit and row_limit > 0:
             work = work.sample(n=min(row_limit, len(work)), random_state=42).reset_index(drop=True)
             st.info(
-                tr(
-                    f"Huấn luyện trên **{len(work):,}** dòng (đã áp dụng giới hạn). Đây là tập demo, không phải toàn bộ dữ liệu.",
-                    f"Training on **{len(work):,}** rows (row limit applied). This is a demo subset, not full data.",
+                L(
                     lang,
+                    f"Training pipeline uses **{len(work):,}** rows (**row limit**). Not the full CSV.",
+                    f"Pipeline huấn luyện **{len(work):,}** dòng (**row limit**), không phải full CSV.",
                 )
             )
 
@@ -288,7 +325,7 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
             tld_top_n=tld_top_n,
         )
         pipe = PreprocessingPipeline(config=cfg)
-        with st.spinner("Fitting preprocessing & training ID3..."):
+        with st.spinner(L(lang, "Fitting preprocessing + training ID3…", "Đang fit preprocessing và huấn luyện ID3…")):
             pipe.fit(train_df)
             X_train = pipe.transform_X(train_df)
             y_train = train_df[TARGET_COL].astype(int).values
@@ -311,73 +348,74 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
             "rows_original": int(len(df)),
             "binning_fit_train_only": True,
         }
-        st.success(tr("Huấn luyện hoàn tất.", "Training finished.", lang))
+        st.success(L(lang, "Training finished.", "Huấn luyện xong."))
 
-    st.subheader(tr("Tóm tắt tiền xử lý (lần train gần nhất)", "Preprocessing summary (last train)", lang))
+    st.subheader(L(lang, "Preprocessing summary (last train)", "Tóm tắt preprocessing (train gần nhất)"))
     if "preprocess_info" in st.session_state:
         info = st.session_state["preprocess_info"]
         sample_info = st.session_state.get("sampling_info", {})
         pipe_for_bins = st.session_state.get("pipe")
         st.markdown(
-            f"- **{tr('Cột định danh bị loại', 'Dropped identifier', lang)}:** `{info['dropped_identifier']}`\n"
-            f"- **{tr('Biến mục tiêu', 'Target', lang)}:** `{info['target']}`\n"
-            f"- **{tr('Cột text cardinality cao bị loại mặc định', 'Dropped high-cardinality text columns (default)', lang)}:** "
-            + (", ".join(f"`{c}`" for c in info["dropped_high_card_text_default"]) or tr("Không", "None", lang))
+            f"- **Dropped identifier:** `{info['dropped_identifier']}`\n"
+            f"- **Target:** `{info['target']}`\n"
+            f"- **Dropped high-cardinality text (if enabled):** "
+            + (", ".join(f"`{c}`" for c in info["dropped_high_card_text_default"]) or L(lang, "—", "—"))
             + "\n"
-            f"- **{tr('Cột hạng mục giữ lại', 'Kept categorical column(s)', lang)}:** "
-            + (", ".join(f"`{c}`" for c in info["categorical_kept"]) or tr("Không", "None", lang))
+            f"- **Kept categorical:** "
+            + (", ".join(f"`{c}`" for c in info["categorical_kept"]) or L(lang, "—", "—"))
             + "\n"
-            f"- **{tr('Chiến lược rời rạc hóa số', 'Numeric discretization strategy', lang)}:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
-            f"- **{tr('Binning fit trên train-only', 'Binning fit on train-only', lang)}:** `{sample_info.get('binning_fit_train_only', True)}`\n"
-            f"- **{tr('Giới hạn dòng/sampling', 'Row limit/sampling', lang)}:** `{sample_info.get('row_sampling_enabled', False)}` "
-            f"({tr('dùng', 'used', lang)} {sample_info.get('rows_used_for_training_pipeline', 'N/A')} / {sample_info.get('rows_original', 'N/A')} {tr('dòng', 'rows', lang)})"
+            f"- **Numeric discretization:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
+            f"- **Binning fit on train only:** `{sample_info.get('binning_fit_train_only', True)}`\n"
+            f"- **Row limit / sampling:** `{sample_info.get('row_sampling_enabled', False)}` "
+            f"(rows used: {sample_info.get('rows_used_for_training_pipeline', 'N/A')} / {sample_info.get('rows_original', 'N/A')})"
         )
         if pipe_for_bins is not None:
-            with st.expander(tr("Giải thích khoảng chia bins (numeric split ranges)", "Explain bin split ranges (numeric features)", lang)):
+            with st.expander(L(lang, "Bin edge ranges (numeric features)", "Khoảng giá trị từng **bin** (numeric)")):
                 st.caption(
-                    tr(
-                        "Các khoảng này được fit trên tập train. Ví dụ: nếu một mẫu có giá trị rơi vào khoảng của bin_2 thì trong cây ID3 sẽ dùng nhánh 'bin_2'.",
-                        "These ranges are fit on the train set. Example: if a sample value falls in bin_2 range, ID3 uses branch 'bin_2'.",
+                    L(
                         lang,
+                        "Edges are fit on **train**. A value landing in `bin_k` follows branch `bin_k` in ID3.",
+                        "Ngưỡng (**edges**) fit trên **train**. Giá trị rơi vào `bin_k` → nhánh `bin_k` trong ID3.",
                     )
                 )
                 bin_map = _safe_bin_ranges(pipe_for_bins)
                 if not bin_map:
-                    st.write(tr("Không có cột số để hiển thị bins.", "No numeric bin ranges available.", lang))
+                    st.write(L(lang, "No numeric features to show bin ranges.", "Không có cột numeric để hiển thị bin."))
                 else:
                     chosen = st.selectbox(
-                        tr("Chọn cột số để xem bins", "Select numeric feature for bins", lang),
+                        L(lang, "Pick numeric feature", "Chọn cột **numeric**"),
                         options=sorted(bin_map.keys()),
                     )
                     st.write(f"**{chosen}**")
                     for line in bin_map[chosen]:
                         st.code(line)
     else:
-        st.caption(tr("Huấn luyện mô hình để xem chi tiết tiền xử lý.", "Train the model to see preprocessing details.", lang))
+        st.caption(L(lang, "Train once to populate this summary.", "Huấn luyện một lần để hiển thị phần này."))
 
     # --- Evaluation ---
-    st.header(f"5. {tr('Đánh giá', 'Evaluation', lang)}")
-    st.markdown(
-        tr(
+    st.header(f"5. {L(lang, 'Evaluation', 'Đánh giá')}")
+    if lang == "Tiếng Việt":
+        st.markdown(
             """
-- **Độ chính xác (Accuracy):** tỷ lệ mẫu dự đoán đúng trên toàn bộ dữ liệu test.  
-- **Độ chuẩn xác (Precision - phishing):** trong các mẫu mô hình dự đoán là phishing, có bao nhiêu mẫu thực sự là phishing.  
-- **Độ bao phủ (Recall - phishing):** trong các mẫu phishing thực tế, mô hình phát hiện được bao nhiêu.  
-- **Điểm F1 (F1-score):** trung bình điều hòa giữa precision và recall.  
-- **Ma trận nhầm lẫn (Confusion matrix):** cho biết số lượng dự đoán đúng/sai theo từng lớp `legitimate` và `phishing`.
-""",
+- **Accuracy:** tỷ lệ mẫu dự đoán đúng trên toàn bộ tập test.  
+- **Precision (phishing):** trong các mẫu mô hình dự đoán là phishing, có bao nhiêu mẫu thực sự là phishing.  
+- **Recall (phishing):** trong các mẫu phishing thực tế, mô hình phát hiện được bao nhiêu.  
+- **F1-score:** trung bình điều hòa của Precision và Recall.  
+- **Confusion matrix:** số lượng dự đoán đúng/sai theo từng lớp `legitimate` và `phishing`.
+"""
+        )
+    else:
+        st.markdown(
             """
 - **Accuracy:** proportion of correct predictions on the test set.  
 - **Precision (phishing):** among samples predicted as phishing, how many are truly phishing.  
 - **Recall (phishing):** among truly phishing samples, how many are detected.  
 - **F1-score:** harmonic mean of precision and recall.  
 - **Confusion matrix:** counts correct/incorrect predictions for `legitimate` and `phishing`.
-""",
-            lang,
+"""
         )
-    )
     if "model" not in st.session_state:
-        st.caption(tr("Hãy huấn luyện mô hình trước.", "Train the model first.", lang))
+        st.caption(L(lang, "Train the model first.", "Hãy huấn luyện mô hình trước."))
     else:
         model: ID3Classifier = st.session_state["model"]
         X_test: pd.DataFrame = st.session_state["X_test"]
@@ -385,70 +423,95 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
         y_pred = model.predict(X_test)
         metrics = evaluate(y_test, y_pred)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric(tr("Độ chính xác", "Accuracy", lang), f"{metrics['accuracy']:.4f}")
-        m2.metric(tr("Độ chuẩn xác (phishing)", "Precision (phishing)", lang), f"{metrics['precision']:.4f}")
-        m3.metric(tr("Độ bao phủ (phishing)", "Recall (phishing)", lang), f"{metrics['recall']:.4f}")
-        m4.metric(tr("Điểm F1", "F1-score", lang), f"{metrics['f1']:.4f}")
-        st.caption(tr("Quy ước nhãn: 0 = legitimate, 1 = phishing.", "Label mapping: 0 = legitimate, 1 = phishing.", lang))
-        st.write(f"**{tr('Ma trận nhầm lẫn', 'Confusion matrix', lang)}**")
+        m1.metric("Accuracy", f"{metrics['accuracy']:.4f}")
+        m2.metric("Precision (phishing)", f"{metrics['precision']:.4f}")
+        m3.metric("Recall (phishing)", f"{metrics['recall']:.4f}")
+        m4.metric("F1-score", f"{metrics['f1']:.4f}")
+        st.caption(
+            "Label mapping: `0` = legitimate, `1` = phishing"
+            if lang != "Tiếng Việt"
+            else "Quy ước nhãn: `0` = legitimate, `1` = phishing"
+        )
+        st.write("**Confusion matrix**")
         st.dataframe(confusion_matrix_df(y_test, y_pred), width="stretch")
-        st.text(tr("Báo cáo phân loại", "Classification report", lang))
+        st.text("Classification report")
         st.text(report_string(y_test, y_pred))
 
     # --- Prediction & rule explanation ---
-    st.header(f"6. {tr('Dự đoán và giải thích luật', 'Prediction & rule explanation', lang)}")
-    st.markdown(
-        tr(
+    st.header(f"6. {L(lang, 'Prediction & rule explanation', 'Dự đoán & giải thích luật')}")
+    if lang == "Tiếng Việt":
+        st.markdown(
             """
-- **Chế độ A (mặc định):** chọn một dòng trong tập test để xem dự đoán và so sánh với nhãn thật.  
-- **Chế độ B:** nhập tay một tập nhỏ đặc trưng quan trọng; các đặc trưng còn lại dùng giá trị mặc định từ train.  
-- **Decision path:** hiển thị các nhánh `feature = bin/category` mà mẫu đi qua trong cây ID3.  
-- **Readable IF-THEN rule:** chuyển đường đi thành luật dễ đọc, ví dụ `IF ... THEN class = phishing/legitimate`.  
-- **Natural-language explanation:** diễn giải ngắn gọn vì sao mẫu được phân loại như vậy.
-""",
-            """
-- **Mode A (default):** select a row from the test set to view prediction and compare with true label.  
-- **Mode B:** manually input a small subset of important features; remaining features use train-time defaults.  
-- **Decision path:** shows branch decisions `feature = bin/category` followed by the sample in the ID3 tree.  
-- **Readable IF-THEN rule:** converts that path into a human-readable rule, e.g., `IF ... THEN class = phishing/legitimate`.  
-- **Natural-language explanation:** short text explaining why the sample received that class.
-""",
-            lang,
+- **Pick test row (default):** chọn một dòng trong tập **test**; so **prediction** với **true label**.  
+- **Manual feature subset:** nhập vài **feature** quan trọng; phần còn lại lấy **default** từ **train**.  
+- **Decision path:** các nhánh `feature = bin_x` hoặc **categorical** dọc cây **ID3**.  
+- **IF–THEN rule:** cùng đường đi, viết dạng `IF ... THEN class = phishing | legitimate`.  
+- **Explanation:** mô tả ngắn vì sao tới **leaf** đó.
+"""
         )
-    )
+    else:
+        st.markdown(
+            """
+- **Pick test row (default):** choose one **test** row; compare **prediction** vs **true label**.  
+- **Manual feature subset:** type a few important **features**; the rest use **train** defaults.  
+- **Decision path:** branch tests `feature = bin_x` or a **categorical** value along the **ID3** tree.  
+- **IF–THEN rule:** same path written as `IF ... THEN class = phishing | legitimate`.  
+- **Explanation:** short note on why the leaf class was chosen.
+"""
+        )
     if "model" not in st.session_state or "test_df" not in st.session_state:
-        st.caption(tr("Huấn luyện mô hình để bật chức năng dự đoán.", "Train the model to enable prediction.", lang))
+        st.caption(L(lang, "Train the model to unlock prediction.", "Huấn luyện mô hình để bật phần dự đoán."))
     else:
         pipe = st.session_state["pipe"]
         model = st.session_state["model"]
         test_df: pd.DataFrame = st.session_state["test_df"]
 
-        mode = st.radio("Mode", ["Choose test row (default)", "Manual features (subset)"], horizontal=True)
+        _pick_test, _manual = "pick_test_row", "manual_features"
+        mode = st.radio(
+            L(lang, "Prediction mode", "Chế độ dự đoán"),
+            [_pick_test, _manual],
+            format_func=lambda k: (
+                L(lang, "Pick test row (default)", "Chọn dòng tập test (mặc định)")
+                if k == _pick_test
+                else L(lang, "Manual feature subset", "Nhập tay một phần feature")
+            ),
+            horizontal=True,
+        )
 
-        if mode.startswith("Choose"):
-            idx = st.number_input("Test set row index", min_value=0, max_value=len(test_df) - 1, value=0)
+        if mode == _pick_test:
+            idx = st.number_input(
+                L(lang, "Test row index", "Chỉ số dòng trong tập test"), min_value=0, max_value=len(test_df) - 1, value=0
+            )
             row = test_df.iloc[int(idx)]
-            st.write("**Raw row (excerpt)**")
+            st.write(L(lang, "**Raw feature excerpt**", "**Trích đoạn feature (raw)**"))
             show_cols = [c for c in pipe.feature_columns if c in row.index][:20]
             st.dataframe(row[show_cols].to_frame().T, width="stretch")
-            if st.button("Predict this row"):
+            if st.button(L(lang, "Run prediction", "Chạy dự đoán")):
                 pred, path = predict_test_row(model, pipe, row)
                 if TARGET_COL in row.index:
-                    st.write(f"**True label:** {int(row[TARGET_COL])} ({label_to_display(int(row[TARGET_COL]))})")
-                st.write(f"**Prediction:** {format_prediction(pred)}")
-                st.write("**Decision path / explanation**")
+                    st.write(
+                        f"**{L(lang, 'True label', 'Nhãn đúng')}:** `{int(row[TARGET_COL])}` — **{label_to_display(int(row[TARGET_COL]))}**"
+                    )
+                st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(pred)}**")
+                st.write(f"**{L(lang, 'Decision path', 'Đường đi cây')}**")
                 for step in path:
                     st.write(f"- {step[0]} = {step[1]} → {step[2]}")
-                rule_text, natural_text = _format_path_rule(path)
-                st.write("**Readable IF-THEN rule**")
+                rule_text, natural_text = _format_path_rule(path, lang)
+                st.write(f"**{L(lang, 'IF–THEN rule', 'Luật IF–THEN')}**")
                 st.code(rule_text)
-                st.write(f"**Natural-language explanation:** {natural_text}")
-                st.write("**Sample IF-THEN rules (tree prefix)**")
+                st.markdown(f"**{L(lang, 'Explanation', 'Giải thích')}:** {natural_text}")
+                st.write(L(lang, "**More IF–THEN rules (sample from tree)**", "**Thêm luật IF–THEN (mẫu từ cây)**"))
                 for r in model.rules_to_text(max_rules=16):
                     st.code(r)
 
         else:
-            st.caption("Only a subset of features is required; other fields use training defaults.")
+            st.caption(
+                L(
+                    lang,
+                    "Only the fields below are required; missing values use train-time defaults.",
+                    "Chỉ cần các trường dưới đây; phần còn lại lấy **default** từ train.",
+                )
+            )
             updates: dict = {}
             cols = st.columns(2)
             manual_fields = [f for f in MANUAL_PREDICTION_FEATURES if f in pipe.feature_columns]
@@ -461,7 +524,7 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
                     else:
                         dv = float(pipe.default_raw_row[fname])
                         updates[fname] = st.number_input(fname, value=dv, format="%.6f")
-            if st.button("Predict manual"):
+            if st.button(L(lang, "Run manual prediction", "Dự đoán thủ công")):
                 # TLD as string; numeric as float
                 manual_updates = {}
                 for k, v in updates.items():
@@ -470,18 +533,19 @@ using the **PhiUSIIL Phishing URL Dataset** and a **custom ID3** decision tree
                     else:
                         manual_updates[k] = float(v)
                 pred, path = predict_manual(model, pipe, manual_updates)
-                st.write(f"**Prediction:** {format_prediction(pred)}")
+                st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(pred)}**")
+                st.write(f"**{L(lang, 'Decision path', 'Đường đi cây')}**")
                 for step in path:
                     st.write(f"- {step[0]} = {step[1]} → {step[2]}")
-                rule_text, natural_text = _format_path_rule(path)
-                st.write("**Readable IF-THEN rule**")
+                rule_text, natural_text = _format_path_rule(path, lang)
+                st.write(f"**{L(lang, 'IF–THEN rule', 'Luật IF–THEN')}**")
                 st.code(rule_text)
-                st.write(f"**Natural-language explanation:** {natural_text}")
+                st.markdown(f"**{L(lang, 'Explanation', 'Giải thích')}:** {natural_text}")
                 for r in model.rules_to_text(max_rules=8):
                     st.code(r)
 
     st.divider()
-    st.caption(f"Project root: `{project_root()}`")
+    st.caption(L(lang, f"Project root: `{project_root()}`", f"Thư mục project: `{project_root()}`"))
 
 
 if __name__ == "__main__":
