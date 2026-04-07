@@ -43,6 +43,7 @@ class PreprocessingPipeline:
     imputers: dict[str, SimpleImputer] = field(default_factory=dict)
     discretizers: dict[str, KBinsDiscretizer] = field(default_factory=dict)
     categorical_top_values: dict[str, list[str]] = field(default_factory=dict)
+    numeric_fill_values: dict[str, float] = field(default_factory=dict)
     # One raw-feature row (median/mode) for filling manual prediction gaps
     default_raw_row: pd.Series | None = None
 
@@ -75,6 +76,7 @@ class PreprocessingPipeline:
         self.imputers = {}
         self.discretizers = {}
         self.categorical_top_values = {}
+        self.numeric_fill_values = {}
 
         X_work = X.copy()
         default_vals: dict[str, Any] = {}
@@ -85,7 +87,9 @@ class PreprocessingPipeline:
             imp.fit(s.values.reshape(-1, 1))
             self.imputers[c] = imp
             filled = imp.transform(s.values.reshape(-1, 1)).ravel().astype(float)
-            default_vals[c] = float(np.nanmedian(filled))
+            fill_val = float(np.nanmedian(filled))
+            self.numeric_fill_values[c] = fill_val
+            default_vals[c] = fill_val
             n_unique = len(np.unique(filled))
             n_bins = max(2, min(self.config.n_bins, n_unique))
             last_err: Exception | None = None
@@ -150,6 +154,73 @@ class PreprocessingPipeline:
         self.default_raw_row = pd.Series(default_vals)
 
         return self
+
+    def transform_debug_stages(self, df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+        """Expose intermediate stages for UI/education/debugging views."""
+        if not self.feature_columns:
+            raise RuntimeError("Call fit() before transform_debug_stages().")
+        missing = [c for c in self.feature_columns if c not in df.columns]
+        if missing:
+            raise ValueError(f"Input missing columns: {missing[:5]}...")
+
+        selected = df[self.feature_columns].copy()
+        missing_handled = selected.copy()
+
+        for c in self.numeric_columns:
+            s = pd.to_numeric(selected[c], errors="coerce")
+            imp = self.imputers[c]
+            filled = imp.transform(s.values.reshape(-1, 1)).ravel().astype(float)
+            missing_handled[c] = pd.Series(filled, index=selected.index)
+
+        for c in self.categorical_columns:
+            missing_handled[c] = (
+                selected[c]
+                .astype(str)
+                .replace({"nan": np.nan})
+                .fillna("__MISSING__")
+            )
+
+        transformed = self.transform_X(df)
+        return {
+            "selected": selected,
+            "missing_handled": missing_handled,
+            "transformed": transformed,
+        }
+
+    def feature_decisions(self, original_columns: list[str]) -> pd.DataFrame:
+        """Return used/dropped status and reason for each input column."""
+        rows: list[dict[str, str]] = []
+        for col in original_columns:
+            status = "used"
+            reason = "kept as model feature"
+            if col == TARGET_COL:
+                status = "dropped"
+                reason = "target column"
+            elif col == ID_COL_DROP:
+                status = "dropped"
+                reason = "identifier column"
+            elif self.config.drop_high_card_text and col in HIGH_CARD_TEXT_COLS:
+                status = "dropped"
+                reason = "high-cardinality text"
+            rows.append({"column": col, "status": status, "reason": reason})
+        return pd.DataFrame(rows)
+
+    def numeric_binning_details(self) -> dict[str, dict[str, Any]]:
+        """Return effective bins and edges learned per numeric column."""
+        out: dict[str, dict[str, Any]] = {}
+        for c in self.numeric_columns:
+            disc = self.discretizers.get(c)
+            if disc is None or not hasattr(disc, "bin_edges_"):
+                continue
+            edges = [float(v) for v in disc.bin_edges_[0].tolist()]
+            n_bins_eff = len(edges) - 1
+            out[c] = {
+                "requested_bins": int(self.config.n_bins),
+                "effective_bins": int(n_bins_eff),
+                "strategy": str(self.config.bin_strategy),
+                "edges": edges,
+            }
+        return out
 
     def transform_X(self, df: pd.DataFrame) -> pd.DataFrame:
         """Return fully discrete string DataFrame for ID3 (no target)."""
