@@ -118,7 +118,7 @@ def sidebar_navigation(lang: str, step_states: dict[int, str]) -> None:
         label = L(lang, sec_en, sec_vi)
         is_active = st.session_state.get("active_section") == sec_id
         prefix = "▶" if is_active else "•"
-        if st.button(f"{prefix} {pos}. {label}", key=f"nav_{sec_id}", use_container_width=True, type="primary" if is_active else "secondary"):
+        if st.button(f"{prefix} {pos}. {label}", key=f"nav_{sec_id}", width="stretch", type="primary" if is_active else "secondary"):
             st.session_state["active_section"] = sec_id
 
         if sec_id == "pipeline":

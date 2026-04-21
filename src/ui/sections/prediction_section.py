@@ -4,12 +4,49 @@ import pandas as pd
 import streamlit as st
 
 from src.predictor import format_prediction, predict_manual_artifacts, predict_test_row_artifacts
-from src.ui.charts import plot_bar
+from src.ui.charts import plot_tree_graph
 from src.ui.common import L, format_path_rule, has_training_artifacts
 from src.utils import MANUAL_PREDICTION_FEATURES, TARGET_COL, label_to_display
 
 
 def render_prediction_section(lang: str, training_drift: bool) -> None:
+    def render_prediction_details(path: list[tuple[str, object, str]], graph_key_prefix: str) -> None:
+        rule_text, natural_text = format_path_rule(path, lang)
+        tab_text, tab_graph = st.tabs(
+            [
+                L(lang, "📋 Rule as text", "📋 Luật dạng text"),
+                L(lang, "🌳 Tree graph", "🌳 Đồ thị cây"),
+            ]
+        )
+        with tab_text:
+            st.code(rule_text)
+            st.markdown(f"**{L(lang, 'Explanation', 'Giải thích')}:** {natural_text}")
+
+        with tab_graph:
+            st.caption(L(lang, "Optional visual context for this prediction.", "Ngữ cảnh trực quan tuỳ chọn cho dự đoán này."))
+            render_optional_tree_graph(graph_key_prefix)
+
+    def render_optional_tree_graph(graph_key_prefix: str) -> None:
+        if model.root_ is None:
+            return
+        max_graph_depth = st.slider(
+            L(lang, "Graph max depth", "Độ sâu tối đa của đồ thị"),
+            min_value=1,
+            max_value=10,
+            value=4,
+            key=f"{graph_key_prefix}_graph_depth",
+        )
+        fig = plot_tree_graph(
+            model.root_,
+            max_depth=max_graph_depth,
+            title=L(
+                lang,
+                f"Prediction context: ID3 tree (depth <= {max_graph_depth})",
+                f"Ngữ cảnh dự đoán: cây ID3 (độ sâu <= {max_graph_depth})",
+            ),
+        )
+        st.plotly_chart(fig, width="stretch")
+
     if training_drift and "model" in st.session_state:
         st.warning(
             L(
@@ -42,9 +79,7 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
             st.dataframe(transformed_row.to_frame().T, width="stretch")
             for step in path:
                 st.write(f"- {step[0]} = {step[1]} → {step[2]}")
-            rule_text, natural_text = format_path_rule(path, lang)
-            st.code(rule_text)
-            st.markdown(f"**{L(lang, 'Explanation', 'Giải thích')}:** {natural_text}")
+            render_prediction_details(path, "pred_test_row")
     else:
         updates: dict = {}
         cols = st.columns(2)
@@ -61,6 +96,4 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
             st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(pred)}**")
             st.dataframe(raw_manual_row.to_frame().T, width="stretch")
             st.dataframe(transformed_row.to_frame().T, width="stretch")
-            rule_text, natural_text = format_path_rule(path, lang)
-            st.code(rule_text)
-            st.markdown(f"**{L(lang, 'Explanation', 'Giải thích')}:** {natural_text}")
+            render_prediction_details(path, "pred_manual")

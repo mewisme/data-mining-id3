@@ -114,6 +114,12 @@ class PreprocessingPipeline:
                             category=UserWarning,
                             module=r"sklearn\.preprocessing\._discretization",
                         )
+                        warnings.filterwarnings(
+                            "ignore",
+                            message=r"Feature .* is constant and will be replaced with 0\.",
+                            category=UserWarning,
+                            module=r"sklearn\.preprocessing\._discretization",
+                        )
                         disc.fit(filled.reshape(-1, 1))
                     last_err = None
                     break
@@ -132,6 +138,12 @@ class PreprocessingPipeline:
                     warnings.filterwarnings(
                         "ignore",
                         message=r"Bins whose width are too small.*",
+                        category=UserWarning,
+                        module=r"sklearn\.preprocessing\._discretization",
+                    )
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=r"Feature .* is constant and will be replaced with 0\.",
                         category=UserWarning,
                         module=r"sklearn\.preprocessing\._discretization",
                     )
