@@ -73,13 +73,23 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
         row = test_df.iloc[int(idx)]
         if st.button(L(lang, "Run prediction", "Chạy dự đoán")):
             pred, path, transformed_row = predict_test_row_artifacts(model, pipe, row)
-            if TARGET_COL in row.index:
-                st.write(f"**{L(lang, 'True label', 'Nhãn đúng')}:** `{int(row[TARGET_COL])}` — **{label_to_display(int(row[TARGET_COL]))}**")
-            st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(pred)}**")
-            st.dataframe(transformed_row.to_frame().T, width="stretch")
-            for step in path:
+            st.session_state["pred_test_row_result"] = {
+                "pred": int(pred),
+                "path": path,
+                "transformed_row": transformed_row,
+                "true_label": int(row[TARGET_COL]) if TARGET_COL in row.index else None,
+            }
+
+        test_result = st.session_state.get("pred_test_row_result")
+        if test_result is not None:
+            true_label = test_result.get("true_label")
+            if true_label is not None:
+                st.write(f"**{L(lang, 'True label', 'Nhãn đúng')}:** `{true_label}` — **{label_to_display(true_label)}**")
+            st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(int(test_result['pred']))}**")
+            st.dataframe(test_result["transformed_row"].to_frame().T, width="stretch")
+            for step in test_result["path"]:
                 st.write(f"- {step[0]} = {step[1]} → {step[2]}")
-            render_prediction_details(path, "pred_test_row")
+            render_prediction_details(test_result["path"], "pred_test_row")
     else:
         updates: dict = {}
         cols = st.columns(2)
@@ -93,7 +103,16 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
         if st.button(L(lang, "Run manual prediction", "Dự đoán thủ công")):
             manual_updates = {k: (str(v).strip() or "com") if k == "TLD" else float(v) for k, v in updates.items()}
             pred, path, raw_manual_row, transformed_row = predict_manual_artifacts(model, pipe, manual_updates)
-            st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(pred)}**")
-            st.dataframe(raw_manual_row.to_frame().T, width="stretch")
-            st.dataframe(transformed_row.to_frame().T, width="stretch")
-            render_prediction_details(path, "pred_manual")
+            st.session_state["pred_manual_result"] = {
+                "pred": int(pred),
+                "path": path,
+                "raw_manual_row": raw_manual_row,
+                "transformed_row": transformed_row,
+            }
+
+        manual_result = st.session_state.get("pred_manual_result")
+        if manual_result is not None:
+            st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(int(manual_result['pred']))}**")
+            st.dataframe(manual_result["raw_manual_row"].to_frame().T, width="stretch")
+            st.dataframe(manual_result["transformed_row"].to_frame().T, width="stretch")
+            render_prediction_details(manual_result["path"], "pred_manual")
