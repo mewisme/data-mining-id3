@@ -9,6 +9,7 @@ SECTION_DEFS: list[tuple[str, str, str]] = [
     ("preprocess_summary", "Preprocessing Summary", "Tóm tắt tiền xử lý"),
     ("pipeline", "Data Processing Pipeline", "Quy trình xử lý dữ liệu"),
     ("evaluation", "Evaluation & Metrics", "Đánh giá & chỉ số"),
+    ("tree_viz", "Decision Tree Visualisation", "Trực quan hoá cây quyết định"),
     ("prediction", "Prediction & Rule Explanation", "Dự đoán & giải thích luật"),
 ]
 

@@ -33,6 +33,7 @@ from src.ui.sections.pipeline_section import render_pipeline_section
 from src.ui.sections.prediction_section import render_prediction_section
 from src.ui.sections.preprocess_summary import render_preprocess_summary_section
 from src.ui.sections.training_controls import TrainingUiParams, render_training_controls_section
+from src.ui.sections.tree_section import render_tree_section
 from src.utils import project_root
 
 
@@ -149,7 +150,10 @@ def main() -> None:
     with render_section(f"6. {L(lang, 'Evaluation', 'Đánh giá')}", "evaluation"):
         render_evaluation_section(lang, training_drift)
 
-    with render_section(f"7. {L(lang, 'Prediction & rule explanation', 'Dự đoán & giải thích luật')}", "prediction"):
+    with render_section(f"7. {L(lang, 'Decision Tree Visualisation', 'Trực quan hoá cây quyết định')}", "tree_viz"):
+        render_tree_section(lang)
+
+    with render_section(f"8. {L(lang, 'Prediction & rule explanation', 'Dự đoán & giải thích luật')}", "prediction"):
         render_prediction_section(lang, training_drift)
 
     st.divider()
