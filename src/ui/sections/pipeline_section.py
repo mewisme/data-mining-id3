@@ -12,7 +12,7 @@ from src.ui.charts import (
     plot_numeric_before_after,
     plot_split_distribution,
 )
-from src.ui.common import L
+from src.ui.common import L, has_training_artifacts
 from src.utils import TARGET_COL
 
 
@@ -30,6 +30,16 @@ def _render_raw_data_section(df: pd.DataFrame, lang: str) -> None:
 
 
 def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParams) -> None:
+    if not has_training_artifacts(("pipe", "train_df", "test_df", "work_df", "X_train", "X_test")):
+        st.caption(
+            L(
+                lang,
+                "Run **Train ID3** in Section 3 to unlock all pipeline subsections (5.1 to 5.7).",
+                "Hãy chạy **Huấn luyện ID3** ở Mục 3 để hiển thị toàn bộ các mục con của pipeline (5.1 đến 5.7).",
+            )
+        )
+        return
+
     _render_raw_data_section(df, lang)
 
     st.subheader(L(lang, "5.2. Feature Selection / Dropped Columns", "5.2. Chọn feature / cột bị loại"))
