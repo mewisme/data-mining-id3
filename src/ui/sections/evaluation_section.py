@@ -31,6 +31,20 @@ def render_evaluation_section(lang: str, training_drift: bool) -> None:
     m2.metric(L(lang, "Precision (phishing)", "Precision (phishing)"), f"{metrics['precision']:.4f}")
     m3.metric(L(lang, "Recall (phishing)", "Recall (phishing)"), f"{metrics['recall']:.4f}")
     m4.metric(L(lang, "F1-score", "Điểm F1"), f"{metrics['f1']:.4f}")
+
+    with st.expander(L(lang, "Metric formulas", "Công thức các chỉ số"), expanded=False):
+        st.caption(
+            L(
+                lang,
+                "Positive class for Precision/Recall/F1 is phishing (label = 0).",
+                "Lớp dương dùng cho Precision/Recall/F1 là phishing (label = 0).",
+            )
+        )
+        st.latex(r"\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}")
+        st.latex(r"\text{Precision} = \frac{TP}{TP + FP}")
+        st.latex(r"\text{Recall} = \frac{TP}{TP + FN}")
+        st.latex(r"F_1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}")
+
     st.write(f"**{L(lang, 'Confusion matrix', 'Ma trận nhầm lẫn')}**")
     st.dataframe(confusion_matrix_df(y_test, y_pred), width="stretch")
     st.write(f"**{L(lang, 'Classification report', 'Báo cáo phân loại')}**")

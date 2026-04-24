@@ -36,6 +36,15 @@ def render_training_controls_section(df: pd.DataFrame, lang: str) -> tuple[Train
         BinStrategy,
         st.selectbox(L(lang, "Bin strategy", "Chiến lược **bin**"), ["quantile", "uniform"], index=0),
     )
+    st.caption(
+        L(
+            lang,
+            "- `quantile`: bins have similar sample counts (recommended for skewed data).\n"
+            "- `uniform`: bins are equal-width by value range (more threshold-intuitive).",
+            "- `quantile`: các bin có số mẫu gần tương đương (khuyến nghị khi dữ liệu lệch).\n"
+            "- `uniform`: các bin có độ rộng bằng nhau theo miền giá trị (dễ diễn giải ngưỡng).",
+        )
+    )
     tld_top_n = st.slider(
         L(lang, "Top-N frequent categories per categorical column (else OTHER)", "**Top-N** hạng mục thường gặp / mỗi cột phân loại (còn lại **OTHER**)"),
         10,

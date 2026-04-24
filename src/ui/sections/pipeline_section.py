@@ -27,18 +27,6 @@ def _render_raw_data_section(df: pd.DataFrame, lang: str) -> None:
     c1.metric(L(lang, "Rows", "Số dòng"), f"{len(df):,}")
     c2.metric(L(lang, "Columns", "Số cột"), len(df.columns))
     c3.metric(L(lang, "Target", "Nhãn đích"), TARGET_COL if TARGET_COL in df.columns else L(lang, "missing", "thiếu"))
-    if TARGET_COL in df.columns:
-        cls = df[TARGET_COL].value_counts(dropna=False).rename_axis("label").reset_index(name="count")
-        with st.expander(L(lang, "Chart: Class distribution (raw target)", "Biểu đồ: Phân phối lớp (nhãn thô)"), expanded=False):
-            st.plotly_chart(
-                plot_bar(
-                    cls,
-                    x="label",
-                    y="count",
-                    title=L(lang, "Class distribution (raw target)", "Phân phối lớp (nhãn thô)"),
-                ),
-                width="stretch",
-            )
 
 
 def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParams) -> None:
@@ -114,7 +102,6 @@ def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParam
         if bin_details:
             full_stage = pipe.transform_debug_stages(train_df)
             summary_rows: list[dict[str, object]] = []
-            auto_warnings: list[str] = []
             for feature in sorted(bin_details.keys()):
                 detail = bin_details[feature]
                 transformed_col = full_stage["transformed"][feature].astype(str)
@@ -133,35 +120,74 @@ def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParam
                         L(lang, "Dominant share", "Tỷ lệ bin ưu thế"): f"{dominant_share:.1%}",
                     }
                 )
-                if int(detail["effective_bins"]) < int(detail["requested_bins"]):
-                    auto_warnings.append(
-                        L(
-                            lang,
-                            f"`{feature}` uses fewer effective bins ({detail['effective_bins']}) than requested ({detail['requested_bins']}).",
-                            f"`{feature}` có số bin thực tế ({detail['effective_bins']}) thấp hơn số bin yêu cầu ({detail['requested_bins']}).",
-                        )
-                    )
-                if dominant_share >= 0.8:
-                    auto_warnings.append(
-                        L(
-                            lang,
-                            f"`{feature}` is highly concentrated: {dominant_share:.1%} samples fall into one bin ({dominant_bin}).",
-                            f"`{feature}` bị dồn mạnh: {dominant_share:.1%} mẫu rơi vào một bin ({dominant_bin}).",
-                        )
-                    )
 
             st.write(L(lang, "Numeric binning overview", "Tổng quan rời rạc hóa cột số"))
             st.dataframe(pd.DataFrame(summary_rows), width="stretch")
-
-            if auto_warnings:
-                with st.expander(L(lang, "Auto warnings", "Cảnh báo tự động"), expanded=False):
-                    for warn in auto_warnings:
-                        st.warning(warn)
 
             col = st.selectbox(
                 L(lang, "Pick a numeric feature for detailed charts", "Chọn cột số để xem chi tiết biểu đồ"),
                 options=sorted(bin_details.keys()),
             )
+            with st.expander(L(lang, "How bins are computed", "Cách tính toán chia bin"), expanded=False):
+                requested_bins = int(bin_details[col]["requested_bins"])
+                effective_bins = int(bin_details[col]["effective_bins"])
+                unique_count = int(pd.to_numeric(full_stage["missing_handled"][col], errors="coerce").nunique(dropna=True))
+                strategy = str(bin_details[col]["strategy"])
+                st.markdown(
+                    L(
+                        lang,
+                        f"1. Start from requested bins: **{requested_bins}**.\n"
+                        f"2. Check unique numeric values in train for `{col}`: **{unique_count}**.\n"
+                        f"3. Effective bins become **{effective_bins}** (cannot exceed meaningful unique splits).\n"
+                        f"4. Compute bin edges with strategy **`{strategy}`**:\n"
+                        "- `quantile`: edges by percentiles (bins tend to have similar sample counts).\n"
+                        "- `uniform`: edges by equal value-width in `[min, max]`.\n"
+                        "5. Fit edges on **train only**, then apply the same edges to test/predict.",
+                        f"1. Bắt đầu từ số bin yêu cầu: **{requested_bins}**.\n"
+                        f"2. Kiểm tra số giá trị số khác nhau trên train của `{col}`: **{unique_count}**.\n"
+                        f"3. Số bin thực tế là **{effective_bins}** (không thể vượt quá mức tách có ý nghĩa theo dữ liệu).\n"
+                        f"4. Tính ngưỡng chia theo chiến lược **`{strategy}`**:\n"
+                        "- `quantile`: chia theo percentile (các bin thường có số mẫu gần nhau).\n"
+                        "- `uniform`: chia đều theo độ rộng giá trị trong `[min, max]`.\n"
+                        "5. Ngưỡng chỉ fit trên **train**, sau đó áp dụng lại cho test/predict.",
+                    )
+                )
+
+            with st.expander(L(lang, "Binning process details", "Chi tiết quá trình chia bin"), expanded=False):
+                edges = [float(v) for v in bin_details[col]["edges"]]
+                interval_rows: list[dict[str, str]] = []
+                for idx in range(len(edges) - 1):
+                    left = edges[idx]
+                    right = edges[idx + 1]
+                    right_bracket = "]" if idx == len(edges) - 2 else ")"
+                    interval_rows.append(
+                        {
+                            L(lang, "Bin", "Bin"): f"bin_{idx}",
+                            L(lang, "Interval", "Khoảng"): f"[{left:.6g}, {right:.6g}{right_bracket}",
+                        }
+                    )
+                st.write(L(lang, "1) Learned bin intervals", "1) Các khoảng bin đã học"))
+                st.dataframe(pd.DataFrame(interval_rows), width="stretch")
+
+                transformed_col = full_stage["transformed"][col].astype(str)
+                freq_rows = (
+                    transformed_col.value_counts()
+                    .rename_axis(L(lang, "Bin", "Bin"))
+                    .reset_index(name=L(lang, "Count", "Số mẫu"))
+                )
+                st.write(L(lang, "2) Number of samples per bin", "2) Số mẫu rơi vào từng bin"))
+                st.dataframe(freq_rows, width="stretch")
+
+                preview_raw = pd.to_numeric(full_stage["missing_handled"][col], errors="coerce")
+                preview_df = pd.DataFrame(
+                    {
+                        L(lang, "Raw value (after imputation)", "Giá trị thô (sau điền thiếu)"): preview_raw,
+                        L(lang, "Assigned bin", "Bin được gán"): transformed_col,
+                    }
+                ).dropna()
+                st.write(L(lang, "3) Example mapping: value -> bin", "3) Ví dụ ánh xạ: giá trị -> bin"))
+                st.dataframe(preview_df.head(30), width="stretch")
+
             c1, c2 = st.columns(2)
             with c1:
                 with st.expander(L(lang, "Chart: Before/after numeric binning", "Biểu đồ: Trước/sau rời rạc hóa"), expanded=False):
@@ -190,7 +216,7 @@ def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParam
         pipe = st.session_state["pipe"]
         train_df = st.session_state["train_df"]
         if pipe.categorical_columns:
-            cat_col = st.selectbox(L(lang, "Categorical column example", "Cột phân loại ví dụ"), options=pipe.categorical_columns)
+            cat_col = "TLD" if "TLD" in pipe.categorical_columns else pipe.categorical_columns[0]
             full_cat_stage = pipe.transform_debug_stages(train_df)
             with st.expander(L(lang, "Chart: Categorical before/after transform", "Biểu đồ: Trước/sau biến đổi cột phân loại"), expanded=False):
                 st.plotly_chart(

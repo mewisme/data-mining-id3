@@ -19,30 +19,20 @@ def render_preprocess_summary_section(lang: str) -> None:
     st.markdown(
         L(
             lang,
-            f"- **Dropped identifier:** `{info['dropped_identifier']}`\n"
-            f"- **Target:** `{info['target']}`\n"
-            f"- **Dropped high-cardinality text (always for this demo):** "
-            + (", ".join(f"`{c}`" for c in info["dropped_high_card_text_default"]) or "—")
-            + "\n"
-            f"- **Kept categorical:** "
+            f"- **Train snapshot:** rows used `{sample_info.get('rows_used_for_training_pipeline', 'N/A')}` / original `{sample_info.get('rows_original', 'N/A')}`\n"
+            f"- **Sampling enabled:** `{sample_info.get('row_sampling_enabled', False)}`\n"
+            f"- **Numeric discretization used:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
+            f"- **Categorical columns in pipeline:** "
             + (", ".join(f"`{c}`" for c in info["categorical_kept"]) or "—")
             + "\n"
-            f"- **Numeric discretization:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
-            f"- **Binning fit on train only:** `{sample_info.get('binning_fit_train_only', True)}`\n"
-            f"- **Row limit / sampling:** `{sample_info.get('row_sampling_enabled', False)}` "
-            f"(rows used: {sample_info.get('rows_used_for_training_pipeline', 'N/A')} / {sample_info.get('rows_original', 'N/A')})",
-            f"- **Cột định danh bị loại:** `{info['dropped_identifier']}`\n"
-            f"- **Nhãn đích:** `{info['target']}`\n"
-            f"- **Text có độ phân biệt cao bị loại (mặc định cho demo):** "
-            + (", ".join(f"`{c}`" for c in info["dropped_high_card_text_default"]) or "—")
-            + "\n"
-            f"- **Cột phân loại được giữ:** "
+            f"- **Binning fit on train only:** `{sample_info.get('binning_fit_train_only', True)}`",
+            f"- **Ảnh chụp lần train:** số dòng dùng `{sample_info.get('rows_used_for_training_pipeline', 'N/A')}` / tổng gốc `{sample_info.get('rows_original', 'N/A')}`\n"
+            f"- **Có lấy mẫu:** `{sample_info.get('row_sampling_enabled', False)}`\n"
+            f"- **Rời rạc hóa số đã dùng:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
+            f"- **Cột phân loại trong pipeline:** "
             + (", ".join(f"`{c}`" for c in info["categorical_kept"]) or "—")
             + "\n"
-            f"- **Rời rạc hóa cột số:** `{info['bin_strategy']}`, bins=`{info['n_bins']}`\n"
-            f"- **Binning chỉ fit trên train:** `{sample_info.get('binning_fit_train_only', True)}`\n"
-            f"- **Giới hạn dòng / lấy mẫu:** `{sample_info.get('row_sampling_enabled', False)}` "
-            f"(số dòng đã dùng: {sample_info.get('rows_used_for_training_pipeline', 'N/A')} / {sample_info.get('rows_original', 'N/A')})",
+            f"- **Binning chỉ fit trên train:** `{sample_info.get('binning_fit_train_only', True)}`",
         )
     )
     if pipe_for_bins is None:
