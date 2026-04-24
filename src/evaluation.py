@@ -46,3 +46,18 @@ def report_string(y_true: np.ndarray | pd.Series, y_pred: np.ndarray) -> str:
         target_names=target_names,
         zero_division=0,
     )
+
+
+def report_df(y_true: np.ndarray | pd.Series, y_pred: np.ndarray) -> pd.DataFrame:
+    yt = np.asarray(y_true).astype(int).ravel()
+    yp = np.asarray(y_pred).astype(int).ravel()
+    target_names = [label_to_display(LABEL_LEGITIMATE), label_to_display(LABEL_PHISHING)]
+    report = classification_report(
+        yt,
+        yp,
+        labels=[LABEL_LEGITIMATE, LABEL_PHISHING],
+        target_names=target_names,
+        output_dict=True,
+        zero_division=0,
+    )
+    return pd.DataFrame(report).transpose()

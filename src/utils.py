@@ -86,9 +86,10 @@ MANUAL_PREDICTION_FEATURES: Final[tuple[str, ...]] = (
     "TLD",
 )
 
-# Internal binary label encoding (dataset already uses this)
-LABEL_LEGITIMATE: Final[int] = 0
-LABEL_PHISHING: Final[int] = 1
+# Internal binary label encoding (PhiUSIIL convention)
+# 1 = legitimate, 0 = phishing
+LABEL_LEGITIMATE: Final[int] = 1
+LABEL_PHISHING: Final[int] = 0
 
 LABEL_DISPLAY: Final[dict[int, str]] = {
     LABEL_LEGITIMATE: "legitimate",

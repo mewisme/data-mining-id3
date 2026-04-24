@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import numpy as np
+import pandas as pd
 import streamlit as st
 
 from src.id3 import ID3Classifier
-from src.ui.charts import plot_tree_graph
+from src.ui.charts import plot_tree_graphviz
 from src.ui.common import L, has_training_artifacts
 
 
@@ -68,8 +70,73 @@ def render_tree_section(lang: str) -> None:
 
     # ── Graph tab ─────────────────────────────────────────────────────────────
     with tab_graph:
-        col_ctrl, col_info = st.columns([2, 3])
-        with col_ctrl:
+        with st.expander(L(lang, "ID3 formulas (entropy & information gain)", "Công thức ID3 (entropy & information gain)"), expanded=False):
+            st.markdown(f"**{L(lang, 'Core formulas', 'Công thức cốt lõi')}**")
+            st.latex(r"H(S) = -\sum_{i} p_i \log_2(p_i)")
+            st.latex(r"Gain(S, A) = H(S) - \sum_{v \in Values(A)} \frac{|S_v|}{|S|}H(S_v)")
+
+            var_rows = [
+                {
+                    L(lang, "Symbol", "Ký hiệu"): "S",
+                    L(lang, "Meaning", "Ý nghĩa"): L(lang, "Current sample set at a node", "Tập mẫu hiện tại tại một nút"),
+                },
+                {
+                    L(lang, "Symbol", "Ký hiệu"): "A",
+                    L(lang, "Meaning", "Ý nghĩa"): L(lang, "Candidate feature for splitting", "Đặc trưng ứng viên để chia"),
+                },
+                {
+                    L(lang, "Symbol", "Ký hiệu"): "S_v",
+                    L(lang, "Meaning", "Ý nghĩa"): L(lang, "Subset where A takes value v", "Tập con khi A nhận giá trị v"),
+                },
+                {
+                    L(lang, "Symbol", "Ký hiệu"): "p_i",
+                    L(lang, "Meaning", "Ý nghĩa"): L(lang, "Class probability at the node", "Xác suất lớp tại nút"),
+                },
+            ]
+            st.dataframe(pd.DataFrame(var_rows), width="stretch")
+
+            if "X_train" in st.session_state and "train_df" in st.session_state:
+                X_train_df: pd.DataFrame = st.session_state["X_train"]
+                y_train = np.asarray(st.session_state["train_df"]["label"]).astype(int).ravel()
+                p_legit = float(np.mean(y_train == 1))
+                p_phish = float(np.mean(y_train == 0))
+                h_parent = 0.0
+                for p in (p_legit, p_phish):
+                    if p > 0:
+                        h_parent -= p * np.log2(p)
+
+                st.markdown(f"**{L(lang, 'Root node example', 'Ví dụ tại nút gốc')}**")
+                st.write(
+                    L(
+                        lang,
+                        f"At root: p(legitimate)={p_legit:.4f}, p(phishing)={p_phish:.4f}",
+                        f"Tại nút gốc: p(hợp lệ)={p_legit:.4f}, p(lừa đảo)={p_phish:.4f}",
+                    )
+                )
+                st.latex(
+                    rf"H(S_{{root}}) = -({p_legit:.4f})\log_2({p_legit:.4f}) - ({p_phish:.4f})\log_2({p_phish:.4f}) = {h_parent:.4f}"
+                )
+
+                gain_rows: list[dict[str, float | str]] = []
+                for feat in X_train_df.columns:
+                    gain_val = float(model._information_gain(y_train, feat, X_train_df[feat]))
+                    gain_rows.append(
+                        {
+                            L(lang, "Feature", "Đặc trưng"): feat,
+                            L(lang, "Gain", "Gain"): gain_val,
+                        }
+                    )
+                gain_df = pd.DataFrame(gain_rows).sort_values(by=L(lang, "Gain", "Gain"), ascending=False).head(12)
+                st.caption(
+                    L(
+                        lang,
+                        "Top features by information gain at the root (computed on transformed train data). ID3 picks the highest one.",
+                        "Top đặc trưng theo information gain tại nút gốc (tính trên dữ liệu train đã transform). ID3 sẽ chọn đặc trưng cao nhất.",
+                    )
+                )
+                st.dataframe(gain_df, width="stretch")
+
+        with st.container():
             max_depth = st.slider(
                 L(lang, "Max display depth", "Độ sâu hiển thị tối đa"),
                 min_value=1,
@@ -83,24 +150,8 @@ def render_tree_section(lang: str) -> None:
                     "Tăng lên để xem nhánh sâu hơn (có thể chật).",
                 ),
             )
-        with col_info:
-            st.info(
-                L(
-                    lang,
-                    "- 🔵 **Blue circles** = internal split nodes (hover for feature & sample counts).\n"
-                    "- 🟢 **Green squares** = leaf predicting **Legitimate**.\n"
-                    "- 🔴 **Red squares** = leaf predicting **Phishing**.\n"
-                    "- Edge labels show the feature value that leads to that branch.",
-                    "- 🔵 **Vòng tròn xanh** = nút rẽ nhánh (hover để xem đặc trưng & số mẫu).\n"
-                    "- 🟢 **Hình vuông xanh lá** = lá dự đoán **Legitimate** (hợp lệ).\n"
-                    "- 🔴 **Hình vuông đỏ** = lá dự đoán **Phishing**.\n"
-                    "- Nhãn cạnh là giá trị đặc trưng dẫn đến nhánh đó.",
-                )
-            )
-
-        fig = plot_tree_graph(
-            model.root_,
-            max_depth=max_depth,
-            title=L(lang, f"ID3 Decision Tree (depth ≤ {max_depth})", f"Cây quyết định ID3 (độ sâu ≤ {max_depth})"),
-        )
-        st.plotly_chart(fig, width="stretch")
+        try:
+            dot = plot_tree_graphviz(model.root_, max_depth=max_depth, lang=lang)
+            st.graphviz_chart(dot, width="stretch")
+        except RuntimeError as exc:
+            st.warning(f"{exc}. {L(lang, 'Install dependencies and restart app.', 'Hãy cài dependency và khởi động lại app.')}")

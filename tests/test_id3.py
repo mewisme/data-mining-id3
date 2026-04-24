@@ -32,8 +32,8 @@ def test_predict_follows_leaves():
     y = np.array([0, 0, 1, 1])
     clf = ID3Classifier(max_depth=5, min_samples_split=2)
     clf.fit(X, pd.Series(y))
-    assert clf.predict_one(pd.Series({"a": "x"})) == LABEL_LEGITIMATE
-    assert clf.predict_one(pd.Series({"a": "y"})) == LABEL_PHISHING
+    assert clf.predict_one(pd.Series({"a": "x"})) == LABEL_PHISHING
+    assert clf.predict_one(pd.Series({"a": "y"})) == LABEL_LEGITIMATE
 
 
 def test_unseen_categorical_uses_majority_at_node():

@@ -46,6 +46,6 @@ def test_predict_manual_artifacts_applies_updates():
 
 
 def test_format_prediction_known_labels():
-    assert format_prediction(0) == "legitimate"
-    assert format_prediction(1) == "phishing"
+    assert format_prediction(0) == "phishing"
+    assert format_prediction(1) == "legitimate"
 

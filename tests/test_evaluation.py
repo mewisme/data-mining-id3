@@ -10,8 +10,8 @@ def test_evaluate_metrics_known_values():
     y_pred = np.array([0, 1, 1, 1])
     metrics = evaluate(y_true, y_pred)
     assert metrics["accuracy"] == 0.75
-    assert round(metrics["precision"], 3) == 0.667
-    assert metrics["recall"] == 1.0
+    assert metrics["precision"] == 1.0
+    assert metrics["recall"] == 0.5
 
 
 def test_confusion_matrix_df_shape_and_counts():

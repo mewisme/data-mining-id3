@@ -44,7 +44,7 @@ def main() -> None:
         st.stop()
 
     with st.sidebar:
-        lang = st.selectbox("Language / Ngôn ngữ", ["English", "Tiếng Việt"], index=0)
+        lang = st.selectbox("Language / Ngôn ngữ", ["English", "Tiếng Việt"], index=1)
         st.header(L(lang, "Data source", "Nguồn dữ liệu"))
         uploaded = st.file_uploader(L(lang, "PhiUSIIL CSV upload", "Tải lên CSV PhiUSIIL"), type=["csv"])
         default_path = resolve_default_path()
@@ -89,7 +89,7 @@ def main() -> None:
         render_intro_section(lang, source)
 
     with render_section(f"2. {L(lang, 'Dataset Overview', 'Tổng quan dữ liệu')}", "data_overview"):
-        render_dataset_overview_section(df)
+        render_dataset_overview_section(df, lang)
 
     training_drift = False
     params: TrainingUiParams = {

@@ -72,11 +72,19 @@ def render_training_controls_section(df: pd.DataFrame, lang: str) -> tuple[Train
         training_drift = current_cfg != st.session_state["training_config"]
 
     st.markdown(
-        f"- **Dropped identifier:** `{ID_COL_DROP}`\n"
-        f"- **Target:** `{TARGET_COL}` (`0` = legitimate, `1` = phishing; unsupported or missing labels error out)\n"
-        f"- **Always dropped (high-cardinality text):** `URL`, `Domain`, `Title`\n"
-        f"- **Categorical columns:** top-{tld_top_n} per column on **train** + `OTHER`\n"
-        f"- **Numeric discretization:** `{bin_strategy}`, bins=`{n_bins}`, fit on **train** only, applied to **test** / predict"
+        L(
+            lang,
+            f"- **Dropped identifier:** `{ID_COL_DROP}`\n"
+            f"- **Target:** `{TARGET_COL}` (`1` = legitimate, `0` = phishing; unsupported or missing labels error out)\n"
+            f"- **Always dropped (high-cardinality text):** `URL`, `Domain`, `Title`\n"
+            f"- **Categorical columns:** top-{tld_top_n} per column on **train** + `OTHER`\n"
+            f"- **Numeric discretization:** `{bin_strategy}`, bins=`{n_bins}`, fit on **train** only, applied to **test** / predict",
+            f"- **Cột định danh bị loại:** `{ID_COL_DROP}`\n"
+            f"- **Nhãn đích:** `{TARGET_COL}` (`1` = hợp lệ, `0` = phishing; nhãn thiếu hoặc không hỗ trợ sẽ báo lỗi)\n"
+            f"- **Luôn loại bỏ (text có độ phân biệt cao):** `URL`, `Domain`, `Title`\n"
+            f"- **Cột phân loại:** top-{tld_top_n} cho mỗi cột trên **train** + `OTHER`\n"
+            f"- **Rời rạc hóa số:** `{bin_strategy}`, bins=`{n_bins}`, fit **chỉ trên train**, áp dụng cho **test** / dự đoán",
+        )
     )
 
     params: TrainingUiParams = {

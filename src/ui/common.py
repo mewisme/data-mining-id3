@@ -97,8 +97,9 @@ def has_training_artifacts(required_keys: tuple[str, ...] = TRAINING_ARTIFACT_KE
 
 
 def render_section(title: str, section_id: str):
-    expanded = st.session_state.get("active_section") == section_id
-    return st.expander(title, expanded=expanded)
+    _ = section_id
+    st.subheader(title)
+    return st.container()
 
 
 def step_status_label(step_idx: int, step_states: dict[int, str], active_step: int, lang: str) -> str:

@@ -4,6 +4,7 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import streamlit as st
 
 try:
     import plotly.express as px
@@ -11,6 +12,11 @@ try:
 except ModuleNotFoundError:
     px = None
     go = None
+
+try:
+    import graphviz
+except ModuleNotFoundError:
+    graphviz = None
 
 from src.utils import TARGET_COL
 
@@ -26,7 +32,13 @@ def plot_bar(df: pd.DataFrame, x: str, y: str, title: str, color: str | None = N
     return fig
 
 
-def plot_split_distribution(work_df: pd.DataFrame, train_df: pd.DataFrame, test_df: pd.DataFrame) -> go.Figure:
+def plot_split_distribution(
+    work_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    *,
+    title: str = "Class balance: full vs train vs test",
+) -> go.Figure:
     full_counts = work_df[TARGET_COL].value_counts().sort_index()
     train_counts = train_df[TARGET_COL].value_counts().sort_index()
     test_counts = test_df[TARGET_COL].value_counts().sort_index()
@@ -36,10 +48,17 @@ def plot_split_distribution(work_df: pd.DataFrame, train_df: pd.DataFrame, test_
         rows.append({"split": "full", "label": str(lab), "count": int(full_counts.get(lab, 0))})
         rows.append({"split": "train", "label": str(lab), "count": int(train_counts.get(lab, 0))})
         rows.append({"split": "test", "label": str(lab), "count": int(test_counts.get(lab, 0))})
-    return plot_bar(pd.DataFrame(rows), x="split", y="count", color="label", title="Class balance: full vs train vs test")
+    return plot_bar(pd.DataFrame(rows), x="split", y="count", color="label", title=title)
 
 
-def plot_numeric_before_after(train_df: pd.DataFrame, stage: dict[str, pd.DataFrame], col: str, edges: list[float]) -> go.Figure:
+def plot_numeric_before_after(
+    train_df: pd.DataFrame,
+    stage: dict[str, pd.DataFrame],
+    col: str,
+    edges: list[float],
+    *,
+    title: str | None = None,
+) -> go.Figure:
     if go is None:
         raise RuntimeError("plotly is required")
     imputed_vals = pd.to_numeric(stage["missing_handled"][col], errors="coerce").dropna()
@@ -49,7 +68,7 @@ def plot_numeric_before_after(train_df: pd.DataFrame, stage: dict[str, pd.DataFr
     for e in edges[1:-1]:
         fig.add_trace(go.Scatter(x=[e, e], y=[0, edge_y], mode="lines", name=f"edge {e:.4g}", line=dict(dash="dot")))
     fig.update_layout(
-        title=f"{col}: raw/imputed distribution with bin edges",
+        title=title or f"{col}: raw/imputed distribution with bin edges",
         barmode="overlay",
         height=330,
         margin=dict(l=20, r=20, t=60, b=20),
@@ -62,7 +81,13 @@ def plot_bin_counts(bin_series: pd.Series, title: str) -> go.Figure:
     return plot_bar(counts, x="bin", y="count", title=title)
 
 
-def plot_before_after_category(raw: pd.Series, transformed: pd.Series, top_n: int = 12) -> go.Figure:
+def plot_before_after_category(
+    raw: pd.Series,
+    transformed: pd.Series,
+    top_n: int = 12,
+    *,
+    title: str = "Category frequency before vs after",
+) -> go.Figure:
     raw_counts = raw.astype(str).value_counts().head(top_n)
     transformed_counts = transformed.astype(str).value_counts().head(top_n)
     out = pd.DataFrame(
@@ -72,14 +97,24 @@ def plot_before_after_category(raw: pd.Series, transformed: pd.Series, top_n: in
             "stage": ["before"] * len(raw_counts) + ["after"] * len(transformed_counts),
         }
     )
-    return plot_bar(out, x="category", y="count", color="stage", title="Category frequency before vs after")
+    return plot_bar(out, x="category", y="count", color="stage", title=title)
 
 
-def plot_feature_space(df_plot: pd.DataFrame, x: str, y: str, z: str | None, color: str, row_idx: int | None = None) -> go.Figure:
+def plot_feature_space(
+    df_plot: pd.DataFrame,
+    x: str,
+    y: str,
+    z: str | None,
+    color: str,
+    row_idx: int | None = None,
+    *,
+    title_2d: str = "Feature space explorer (2D)",
+    title_3d: str = "Feature space explorer (3D)",
+) -> go.Figure:
     if px is None or go is None:
         raise RuntimeError("plotly is required")
     if z:
-        fig = px.scatter_3d(df_plot, x=x, y=y, z=z, color=color, opacity=0.6, title="Feature space explorer (3D)")
+        fig = px.scatter_3d(df_plot, x=x, y=y, z=z, color=color, opacity=0.6, title=title_3d)
         if row_idx is not None and row_idx in df_plot.index:
             r = df_plot.loc[row_idx]
             fig.add_trace(
@@ -93,7 +128,7 @@ def plot_feature_space(df_plot: pd.DataFrame, x: str, y: str, z: str | None, col
                 )
             )
     else:
-        fig = px.scatter(df_plot, x=x, y=y, color=color, opacity=0.65, title="Feature space explorer (2D)")
+        fig = px.scatter(df_plot, x=x, y=y, color=color, opacity=0.65, title=title_2d)
         if row_idx is not None and row_idx in df_plot.index:
             r = df_plot.loc[row_idx]
             fig.add_trace(
@@ -151,12 +186,14 @@ def plot_tree_graph(root: "ID3Node", max_depth: int = 4, title: str = "ID3 Decis
         depth_counts[depth] += 1
 
     positions: dict[int, tuple[float, float]] = {}
+    x_spacing = 1.8
+    y_spacing = 1.35
     for node_id, node, depth, parent_id, edge_label in records:
         count = depth_counts[depth]
         idx = depth_offsets[depth]
         depth_offsets[depth] += 1
-        x = (idx - (count - 1) / 2.0)
-        y = -depth
+        x = (idx - (count - 1) / 2.0) * x_spacing
+        y = -depth * y_spacing
         positions[node_id] = (x, y)
 
     # ── 3. Build edge traces ──────────────────────────────────────────────────
@@ -253,14 +290,14 @@ def plot_tree_graph(root: "ID3Node", max_depth: int = 4, title: str = "ID3 Decis
         y=node_y,
         mode="markers+text",
         marker=dict(
-            size=22,
+            size=34,
             color=node_colors,
             symbol=node_symbols,
-            line=dict(width=2, color="white"),
+            line=dict(width=2.5, color="white"),
         ),
         text=node_texts,
         textposition="middle center",
-        textfont=dict(size=8, color="white"),
+        textfont=dict(size=10, color="white"),
         hovertext=node_hovers,
         hoverinfo="text",
         showlegend=False,
@@ -279,6 +316,14 @@ def plot_tree_graph(root: "ID3Node", max_depth: int = 4, title: str = "ID3 Decis
                    name="Leaf: Phishing"),
     ]
 
+    theme_base = str(st.get_option("theme.base") or "light").lower()
+    is_dark_theme = theme_base == "dark"
+    background_color = "#0f172a" if is_dark_theme else "#ffffff"
+    font_color = "#e2e8f0" if is_dark_theme else "#0f172a"
+    max_nodes_per_level = max(depth_counts.values(), default=1)
+    max_tree_depth = max(depth_counts.keys(), default=0)
+    dynamic_height = max(700, min(1200, 560 + max_tree_depth * 90 + max_nodes_per_level * 10))
+
     fig = go.Figure(
         data=[edge_trace, edge_label_trace, node_trace] + legend_traces,
         layout=go.Layout(
@@ -288,11 +333,59 @@ def plot_tree_graph(root: "ID3Node", max_depth: int = 4, title: str = "ID3 Decis
             hovermode="closest",
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            height=600,
+            height=dynamic_height,
             margin=dict(l=20, r=20, t=80, b=20),
-            plot_bgcolor="#0f172a",
-            paper_bgcolor="#0f172a",
-            font=dict(color="#e2e8f0"),
+            plot_bgcolor=background_color,
+            paper_bgcolor=background_color,
+            font=dict(color=font_color),
         ),
     )
     return fig
+
+
+def plot_tree_graphviz(root: "ID3Node", max_depth: int = 4, *, lang: str = "English") -> "graphviz.Digraph":
+    if graphviz is None:
+        raise RuntimeError("graphviz is required")
+    dot = graphviz.Digraph(comment="ID3 Tree")
+    dot.attr(rankdir="TB", bgcolor="transparent", splines="spline", nodesep="0.25", ranksep="0.45")
+    dot.attr("node", shape="box", style="rounded,filled", color="#475569", fontname="Arial", fontsize="10")
+    # Use brighter edge labels so bin_* tokens remain readable on dark themes.
+    dot.attr("edge", color="#94a3b8", fontname="Arial", fontsize="10", fontcolor="#e2e8f0", penwidth="1.4")
+
+    txt_split = "Split" if lang != "Tiếng Việt" else "Nút tách"
+    txt_leaf = "Leaf" if lang != "Tiếng Việt" else "Nút lá"
+    txt_samples = "Samples" if lang != "Tiếng Việt" else "Số mẫu"
+    txt_legitimate = "Legitimate" if lang != "Tiếng Việt" else "Hợp lệ"
+    txt_phishing = "Phishing" if lang != "Tiếng Việt" else "Lừa đảo"
+
+    queue: deque[tuple[str, "ID3Node", int]] = deque([("n0", root, 0)])
+    next_id = 1
+    while queue:
+        node_id, node, depth = queue.popleft()
+        vc = node.value_counts
+        n_leg = int(vc.get(1, 0))
+        n_phi = int(vc.get(0, 0))
+        total = n_leg + n_phi
+        if node.is_leaf:
+            pred = int(node.prediction if node.prediction is not None else node.majority_label)
+            label = txt_legitimate if pred == 1 else txt_phishing
+            fill = "#22c55e" if pred == 1 else "#ef4444"
+            dot.node(
+                node_id,
+                f"{txt_leaf}: {label}\n{txt_samples}: {total}\nL={n_leg} | P={n_phi}",
+                fillcolor=fill,
+                fontcolor="white",
+            )
+            continue
+
+        feat = node.feature or "?"
+        dot.node(node_id, f"{txt_split}: {feat}\n{txt_samples}: {total}\nL={n_leg} | P={n_phi}", fillcolor="#3b82f6", fontcolor="white")
+        if depth >= max_depth:
+            continue
+        for edge_val, child in node.children.items():
+            child_id = f"n{next_id}"
+            next_id += 1
+            edge_label = str(edge_val)
+            dot.edge(node_id, child_id, label=edge_label)
+            queue.append((child_id, child, depth + 1))
+    return dot

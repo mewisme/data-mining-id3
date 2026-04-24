@@ -5,6 +5,9 @@ This project is a Phishing URL Classifier built with a custom ID3 decision tree 
 ## Project Overview
 
 - **Purpose:** Classify URLs as **phishing** or **legitimate** using machine learning.
+- **Label Mapping (important):**
+    - `1` = **legitimate**
+    - `0` = **phishing**
 - **Main Technologies:** 
     - **Python:** Core programming language.
     - **Streamlit:** Interactive web application for the UI.
@@ -12,6 +15,7 @@ This project is a Phishing URL Classifier built with a custom ID3 decision tree 
     - **Pandas & NumPy:** Data manipulation and numerical computation.
     - **scikit-learn:** Used for data splitting, evaluation metrics, and discretization support.
     - **Plotly:** Interactive charts for data visualization and model evaluation.
+    - **Graphviz:** Decision tree rendering in UI sections that visualize tree structure.
     - **Pytest:** Automated testing framework.
 - **Architecture:** 
     - `app.py`: Entry point for the Streamlit application.
@@ -55,6 +59,8 @@ pytest
 - **Custom ID3 Implementation:** Do NOT replace `src/id3.py` with standard library classifiers (like scikit-learn's `DecisionTreeClassifier`) unless specifically requested, as the project's educational focus is on the manual ID3 implementation.
 - **Data Preprocessing:** All numeric data MUST be discretized before being passed to the ID3 model. Use the `PreprocessingPipeline` in `src/preprocessing.py` for consistent transformations across training and prediction.
 - **Multilingual Support:** UI strings are managed through a translation helper `L(lang, en, vi)` in `src/ui/common.py`. Adhere to this pattern when adding new UI elements.
+- **Language Default:** UI currently defaults to **Tiếng Việt** in the language selector.
+- **Label Semantics Safety:** Keep class meaning consistent everywhere (`1=legitimate`, `0=phishing`) when editing metrics, reports, and user-facing labels.
 - **Configuration:** Use `src/config.py` and environment variables (e.g., `PHISHING_DEBUG_ERRORS`) for runtime toggles.
 - **Testing:** New features or bug fixes should include corresponding tests in the `tests/` directory.
 

@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from src.predictor import format_prediction, predict_manual_artifacts, predict_test_row_artifacts
-from src.ui.charts import plot_tree_graph
+from src.ui.charts import plot_tree_graphviz
 from src.ui.common import L, format_path_rule, has_training_artifacts
 from src.utils import MANUAL_PREDICTION_FEATURES, TARGET_COL, label_to_display
 
@@ -36,16 +36,8 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
             value=4,
             key=f"{graph_key_prefix}_graph_depth",
         )
-        fig = plot_tree_graph(
-            model.root_,
-            max_depth=max_graph_depth,
-            title=L(
-                lang,
-                f"Prediction context: ID3 tree (depth <= {max_graph_depth})",
-                f"Ngữ cảnh dự đoán: cây ID3 (độ sâu <= {max_graph_depth})",
-            ),
-        )
-        st.plotly_chart(fig, width="stretch")
+        dot = plot_tree_graphviz(model.root_, max_depth=max_graph_depth, lang=lang)
+        st.graphviz_chart(dot, width="stretch")
 
     if training_drift and "model" in st.session_state:
         st.warning(
@@ -65,7 +57,11 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
     mode = st.radio(
         L(lang, "Prediction mode", "Chế độ dự đoán"),
         ["pick_test_row", "manual_features"],
-        format_func=lambda k: (L(lang, "Pick test row (default)", "Chọn dòng tập test (mặc định)") if k == "pick_test_row" else L(lang, "Manual feature subset", "Nhập tay một phần feature")),
+        format_func=lambda k: (
+            L(lang, "Pick test row (default)", "Chọn dòng tập test (mặc định)")
+            if k == "pick_test_row"
+            else L(lang, "Manual feature subset", "Nhập tay một phần feature")
+        ),
         horizontal=True,
     )
     if mode == "pick_test_row":
@@ -77,6 +73,7 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
                 "pred": int(pred),
                 "path": path,
                 "transformed_row": transformed_row,
+                "raw_row": row,
                 "true_label": int(row[TARGET_COL]) if TARGET_COL in row.index else None,
             }
 
@@ -86,11 +83,14 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
             if true_label is not None:
                 st.write(f"**{L(lang, 'True label', 'Nhãn đúng')}:** `{true_label}` — **{label_to_display(true_label)}**")
             st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(int(test_result['pred']))}**")
+            st.write(f"**{L(lang, 'Transformed row used for prediction', 'Dữ liệu đã biến đổi dùng để dự đoán')}**")
             st.dataframe(test_result["transformed_row"].to_frame().T, width="stretch")
+            st.write(f"**{L(lang, 'Original raw row', 'Dữ liệu gốc của dòng này')}**")
+            st.dataframe(test_result["raw_row"].to_frame().T, width="stretch")
             for step in test_result["path"]:
                 st.write(f"- {step[0]} = {step[1]} → {step[2]}")
             render_prediction_details(test_result["path"], "pred_test_row")
-    else:
+    elif mode == "manual_features":
         updates: dict = {}
         cols = st.columns(2)
         manual_fields = [f for f in MANUAL_PREDICTION_FEATURES if f in pipe.feature_columns]
@@ -113,6 +113,8 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
         manual_result = st.session_state.get("pred_manual_result")
         if manual_result is not None:
             st.write(f"**{L(lang, 'Prediction', 'Dự đoán')}:** **{format_prediction(int(manual_result['pred']))}**")
-            st.dataframe(manual_result["raw_manual_row"].to_frame().T, width="stretch")
+            st.write(f"**{L(lang, 'Transformed row used for prediction', 'Dữ liệu đã biến đổi dùng để dự đoán')}**")
             st.dataframe(manual_result["transformed_row"].to_frame().T, width="stretch")
+            st.write(f"**{L(lang, 'Original input row', 'Dữ liệu gốc đã nhập')}**")
+            st.dataframe(manual_result["raw_manual_row"].to_frame().T, width="stretch")
             render_prediction_details(manual_result["path"], "pred_manual")

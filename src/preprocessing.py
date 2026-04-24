@@ -300,22 +300,22 @@ class PreprocessingPipeline:
         return out
 
 
-# Canonical string tokens -> 0 (legitimate) / 1 (phishing). Unknown tokens are errors, never defaulted.
+# Canonical string tokens -> 1 (legitimate) / 0 (phishing). Unknown tokens are errors, never defaulted.
 _TARGET_STR_TO_BIN: dict[str, int] = {
-    "0": 0,
-    "legitimate": 0,
-    "benign": 0,
-    "safe": 0,
-    "no": 0,
     "1": 1,
-    "phishing": 1,
-    "malicious": 1,
-    "yes": 1,
+    "legitimate": 1,
+    "benign": 1,
+    "safe": 1,
+    "no": 1,
+    "0": 0,
+    "phishing": 0,
+    "malicious": 0,
+    "yes": 0,
 }
 
 
 def normalize_target(y: pd.Series) -> tuple[pd.Series, dict[Any, int]]:
-    """Map label column to int 0 (legitimate) / 1 (phishing).
+    """Map label column to int 1 (legitimate) / 0 (phishing).
 
     - Rejects NaN in the target.
     - Accepts numeric labels only if every value is exactly 0 or 1 (including 0.0 / 1.0).

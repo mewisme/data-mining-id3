@@ -20,7 +20,7 @@ def test_numeric_float_binary():
 
 def test_string_labels_mixed_case():
     y, m = normalize_target(pd.Series(["Phishing", "legitimate", "YES"]))
-    assert list(y) == [1, 0, 1]
+    assert list(y) == [0, 1, 0]
 
 
 def test_unknown_string_fails():
