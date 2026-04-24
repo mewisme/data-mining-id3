@@ -274,7 +274,13 @@ def render_pipeline_section(df: pd.DataFrame, lang: str, params: TrainingUiParam
             c1, c2, c3 = st.columns(3)
             x_feat = c1.selectbox(L(lang, "X feature", "Feature trục X"), options=numeric_opts, index=0)
             y_feat = c2.selectbox(L(lang, "Y feature", "Feature trục Y"), options=numeric_opts, index=1)
-            use_3d = c3.checkbox(L(lang, "Enable 3D", "Bật 3D"), value=False)
+            viz_mode = c3.selectbox(
+                L(lang, "View mode", "Chế độ hiển thị"),
+                options=["2d", "3d"],
+                format_func=lambda k: "2D" if k == "2d" else "3D",
+                index=0,
+            )
+            use_3d = viz_mode == "3d"
             z_feat = (
                 st.selectbox(
                     L(lang, "Z feature (3D)", "Feature trục Z (3D)"),

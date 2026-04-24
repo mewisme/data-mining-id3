@@ -39,14 +39,7 @@ def render_prediction_section(lang: str, training_drift: bool) -> None:
         dot = plot_tree_graphviz(model.root_, max_depth=max_graph_depth, lang=lang)
         st.graphviz_chart(dot, width="stretch")
 
-    if training_drift and "model" in st.session_state:
-        st.warning(
-            L(
-                lang,
-                "Predictions and rules below use the **last trained** tree/preprocessor, not the current sliders until you retrain.",
-                "Dự đoán và luật phía dưới dùng cây/preprocessor **đã train trước đó**, chưa theo thanh trượt hiện tại cho đến khi train lại.",
-            )
-        )
+    _ = training_drift
     if not has_training_artifacts(("model", "pipe", "test_df")):
         st.caption(L(lang, "Train the model to unlock prediction.", "Huấn luyện mô hình để bật phần dự đoán."))
         return
